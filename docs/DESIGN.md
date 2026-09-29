@@ -263,10 +263,12 @@ window, one `ssl_expired` when it lapses — no per-check repeats.
   transitions, notification dedup, uptime math, retention, pagination, ownership
   isolation. Target ≥100 meaningful tests.
 - Frontend: Vitest + Testing Library (login validation, monitor list, create form
-  validation, API error state, dashboard loading/empty). Optional Playwright smoke.
+  validation, API error state, dashboard loading/empty). Playwright E2E against
+  the real stack (register → monitors → checks → incidents → logout), added in
+  the hardening round.
 - CI (GitHub Actions): backend matrix Python 3.11 & 3.13 with a Postgres service
-  (proves PostgreSQL compatibility), ruff; frontend `npm ci && build && vitest`.
-  No secrets required.
+  (proves PostgreSQL compatibility), ruff; frontend `npm ci && build && vitest`;
+  Playwright E2E job. No secrets required.
 
 ## I. Docker Deployment (Docker 部署方案)
 

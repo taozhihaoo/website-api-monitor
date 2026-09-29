@@ -62,10 +62,42 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Type-check
         working-directory: frontend
-        run: npx tsc --noEmit
+        run: npm run typecheck
       - name: Unit tests
         working-directory: frontend
         run: npm test
       - name: Production build
         working-directory: frontend
         run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install backend
+        working-directory: backend
+        run: pip install -e .
+      - name: Install frontend + Playwright browser
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Run E2E (real stack: uvicorn + vite + database)
+        working-directory: frontend
+        run: npx playwright test
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7

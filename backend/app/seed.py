@@ -18,6 +18,7 @@ password is generated and printed once. Seed data is refused in production mode.
 
 import logging
 import secrets
+import sys
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -108,7 +109,7 @@ def seed_demo_data(db: Session, password: str | None = None) -> tuple[User, list
 def main() -> int:
     settings = get_settings()
     if settings.is_production:
-        print("Refusing to seed demo data with APP_ENV=production.", file=__import__("sys").stderr)
+        print("Refusing to seed demo data with APP_ENV=production.", file=sys.stderr)
         return 1
 
     from app.database import SessionLocal

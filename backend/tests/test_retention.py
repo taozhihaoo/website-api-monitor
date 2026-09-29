@@ -36,6 +36,9 @@ class TestRetention:
         remaining = db_session.query(MonitorCheck).all()
         assert len(remaining) == 1
         assert remaining[0].checked_at > utcnow() - timedelta(days=30)
+        # retention must only touch checks — related entities survive
+        assert db_session.query(type(monitor)).filter_by(id=monitor.id).count() == 1
+        assert user.id is not None
 
     def test_zero_retention_disables_pruning(self, db_session):
         from tests.factories import make_monitor

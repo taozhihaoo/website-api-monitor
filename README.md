@@ -1,5 +1,7 @@
 # SiteWatch
 
+[![CI](https://github.com/taozhihaoo/website-api-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/taozhihaoo/website-api-monitor/actions/workflows/ci.yml)
+
 A lightweight **self-hosted monitoring platform for websites and APIs** — scheduled
 checks, uptime history, response-time tracking, SSL certificate monitoring,
 incident tracking, alerts (webhook + email), and a web dashboard.
@@ -54,9 +56,9 @@ monitors exist precisely to show failure handling._
 |---|---|
 | ![Monitors list with actions](docs/screenshots/monitors.png) | ![New monitor form (HTTP / keyword / JSON / SSL)](docs/screenshots/create-monitor.png) |
 
-| Incidents | Register |
+| Incidents | API docs |
 |---|---|
-| ![Incidents — ongoing and resolved with durations](docs/screenshots/incidents.png) | ![Register page](docs/screenshots/register.png) |
+| ![Incidents — ongoing and resolved with durations](docs/screenshots/incidents.png) | ![Swagger UI — the full REST API](docs/screenshots/api-docs.png) |
 
 ## Architecture
 
@@ -90,7 +92,7 @@ pre-implementation design document.
 | Database | PostgreSQL 16 (SQLite supported for local dev/tests) |
 | Scheduler | Custom single-process scan loop + `ThreadPoolExecutor` (no Celery/Redis) |
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS 4, TanStack Query, react-router, Recharts |
-| Tests | pytest (+httpx MockTransport), Vitest + Testing Library |
+| Tests | pytest (+httpx MockTransport), Vitest + Testing Library, Playwright E2E |
 | Infra | Docker + docker-compose (backend, frontend/nginx, postgres), GitHub Actions CI |
 
 Deliberately **not** included: Celery, Redis, Kafka, RabbitMQ, Kubernetes,
@@ -279,8 +281,9 @@ honestly rather than hidden.
 ## Testing
 
 ```bash
-cd backend  && .venv/Scripts/python -m pytest -q        # 230+ tests
-cd frontend && npm test                                  # 28 tests
+cd backend  && .venv/Scripts/python -m pytest -q        # 228 tests
+cd frontend && npm test                                  # 28 unit tests
+cd frontend && npx playwright test                       # 11 E2E tests
 ```
 
 - Backend: fully offline — all HTTP via `httpx.MockTransport`, SSL via a fake
@@ -292,13 +295,24 @@ cd frontend && npm test                                  # 28 tests
 - Frontend: Vitest + Testing Library — login/register validation + server errors,
   dashboard (stats/empty/error/retry), monitor list + create-form validation,
   badges, uptime strip, formatters
+- **E2E (Playwright)**: 11 tests against the real running stack (vite dev server →
+  API → database, no mocks): register → dashboard, invalid login, logout/login,
+  monitor creation, form validation, private-URL rejection, manual check with
+  history polling, incident open → recovery → duration, disable/pause,
+  delete with confirmation, and a 404-monitor error state. Uses locator
+  auto-waiting and explicit `expect.poll` conditions — no sleeps, no screen
+  coordinates; each run starts from a fresh database. Local runs use SQLite
+  (identical models/migrations); PostgreSQL is exercised by the CI pytest job
 - CI (GitHub Actions): backend on Python 3.11 & 3.13 **against a real Postgres 16
-  service** (migration check + full suite), frontend typecheck + tests + build
+  service** (migration check + full suite), frontend typecheck + tests + build,
+  and the Playwright E2E job
 
 ## CI
 
-`.github/workflows/ci.yml` — no external secrets required; uses an ephemeral
-Postgres service for the backend matrix job and `npm ci` for the frontend job.
+`.github/workflows/ci.yml` — three jobs: `backend` (Python 3.11 + 3.13 matrix with
+Postgres 16 service: ruff, `alembic upgrade head`, pytest with coverage),
+`frontend` (typecheck, Vitest, production build), and `e2e` (Playwright against
+the real stack). No external secrets required.
 
 ## Demo
 

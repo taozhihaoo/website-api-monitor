@@ -26,7 +26,8 @@ dependencies = [
 dev = [
     "pytest>=8.2",
     "pytest-cov>=5.0",
-    "ruff>=0.5",
+    # Pinned: ruff adds rules in minor releases; unpinned CI would break spontaneously.
+    "ruff==0.16.9",
 ]
 
 [tool.hatch.build.targets.wheel]

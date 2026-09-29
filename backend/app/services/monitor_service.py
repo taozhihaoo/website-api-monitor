@@ -2,7 +2,7 @@
 
 from datetime import timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.api.errors import ApiError
@@ -13,6 +13,7 @@ from app.models.monitor import (
     MONITOR_TYPE_API_JSON,
     MONITOR_TYPE_KEYWORD,
     MONITOR_TYPE_SSL,
+    STATUS_UP,
     Monitor,
 )
 from app.monitoring.url_guard import validate_public_http_url
@@ -114,35 +115,77 @@ def latest_check(db: Session, monitor_id: int) -> MonitorCheck | None:
     )
 
 
-def to_response(db: Session, monitor: Monitor) -> MonitorResponse:
-    latest = latest_check(db, monitor.id)
+_MONITOR_FIELDS = (
+    "id", "name", "type", "target_url", "enabled",
+    "interval_seconds", "timeout_seconds", "expected_status",
+    "keyword", "keyword_mode", "json_path", "json_expected_value",
+    "ssl_check_enabled", "ssl_warning_days",
+    "last_status", "last_checked_at", "next_check_at",
+    "ssl_expires_at", "ssl_days_remaining", "ssl_last_checked_at",
+    "created_at", "updated_at",
+)
+
+
+def _ssl_display_status(monitor: Monitor) -> str:
     from app.monitoring.checker import classify_ssl_status
-    from app.services.uptime_service import uptime_stats
 
     if monitor.ssl_days_remaining is None and monitor.ssl_expires_at is None:
         if monitor.target_url.lower().startswith("https://") and (
             monitor.ssl_check_enabled or monitor.type == MONITOR_TYPE_SSL
         ):
-            ssl_status = "unknown"
-        else:
-            ssl_status = "not_applicable"
-    else:
-        ssl_status = classify_ssl_status(monitor.ssl_days_remaining, monitor.ssl_warning_days)
+            return "unknown"
+        return "not_applicable"
+    return classify_ssl_status(monitor.ssl_days_remaining, monitor.ssl_warning_days)
 
+
+def _build_response(
+    monitor: Monitor, latest: MonitorCheck | None, uptime_24h: float | None
+) -> MonitorResponse:
     return MonitorResponse(
-        **{
-            c: getattr(monitor, c)
-            for c in (
-                "id", "name", "type", "target_url", "enabled",
-                "interval_seconds", "timeout_seconds", "expected_status",
-                "keyword", "keyword_mode", "json_path", "json_expected_value",
-                "ssl_check_enabled", "ssl_warning_days",
-                "last_status", "last_checked_at", "next_check_at",
-                "ssl_expires_at", "ssl_days_remaining", "ssl_last_checked_at",
-                "created_at", "updated_at",
-            )
-        },
-        ssl_status=ssl_status,
+        **{c: getattr(monitor, c) for c in _MONITOR_FIELDS},
+        ssl_status=_ssl_display_status(monitor),
         last_latency_ms=latest.latency_ms if latest else None,
-        uptime_24h=uptime_stats(db, monitor.id, timedelta(hours=24))["uptime_percentage"],
+        uptime_24h=uptime_24h,
     )
+
+
+def to_response(db: Session, monitor: Monitor) -> MonitorResponse:
+    from app.services.uptime_service import uptime_stats
+
+    latest = latest_check(db, monitor.id)
+    uptime = uptime_stats(db, monitor.id, timedelta(hours=24))["uptime_percentage"]
+    return _build_response(monitor, latest, uptime)
+
+
+def list_responses(db: Session, monitors: list[Monitor]) -> list[MonitorResponse]:
+    """Batched variant of to_response for list endpoints (two queries total,
+    regardless of monitor count — avoids the N+1 of per-monitor lookups)."""
+    if not monitors:
+        return []
+    ids = [m.id for m in monitors]
+
+    latest_ids = select(func.max(MonitorCheck.id)).where(
+        MonitorCheck.monitor_id.in_(ids)
+    ).group_by(MonitorCheck.monitor_id)
+    latest_rows = db.scalars(select(MonitorCheck).where(MonitorCheck.id.in_(latest_ids))).all()
+    latest_by_monitor = {row.monitor_id: row for row in latest_rows}
+
+    cutoff = utcnow() - timedelta(hours=24)
+    uptime_rows = db.execute(
+        select(
+            MonitorCheck.monitor_id,
+            func.count(MonitorCheck.id),
+            func.sum(case((MonitorCheck.status == STATUS_UP, 1), else_=0)),
+        )
+        .where(MonitorCheck.monitor_id.in_(ids), MonitorCheck.checked_at >= cutoff)
+        .group_by(MonitorCheck.monitor_id)
+    ).all()
+    uptime_by_monitor = {
+        monitor_id: round((up or 0) / total * 100, 2) if total else None
+        for monitor_id, total, up in uptime_rows
+    }
+
+    return [
+        _build_response(m, latest_by_monitor.get(m.id), uptime_by_monitor.get(m.id))
+        for m in monitors
+    ]

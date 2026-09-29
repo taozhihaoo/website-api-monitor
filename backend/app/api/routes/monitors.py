@@ -33,7 +33,7 @@ def list_monitors(
     monitors = db.scalars(
         select(Monitor).where(Monitor.user_id == user.id).order_by(Monitor.id)
     ).all()
-    return [monitor_service.to_response(db, m) for m in monitors]
+    return monitor_service.list_responses(db, list(monitors))
 
 
 @router.post("", status_code=201, response_model=MonitorResponse)

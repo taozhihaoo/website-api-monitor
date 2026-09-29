@@ -26,6 +26,12 @@ const queryClient = new QueryClient({
   },
 });
 
+// Dev-only diagnostics handle: lets E2E tests introspect cache state.
+// Import.meta.env.DEV is statically false in production builds.
+if (import.meta.env.DEV) {
+  (window as unknown as { __queryClient: QueryClient }).__queryClient = queryClient;
+}
+
 function ProtectedRoutes() {
   const { user, loading } = useAuth();
   if (loading) {

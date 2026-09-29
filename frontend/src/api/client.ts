@@ -58,7 +58,16 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!response.ok) {
     const envelope = body as { error?: { code?: string; message?: string } } | null;
     const message = envelope?.error?.message || `Request failed (HTTP ${response.status})`;
-    throw new ApiError(response.status, envelope?.error?.code || "error", message);
+    const code = envelope?.error?.code || "error";
+    // Mid-session token expiry: reset and return to login instead of leaving
+    // the user with error banners. Login/register 401s are handled in-page.
+    if (response.status === 401 && !path.startsWith("/api/auth")) {
+      clearToken();
+      if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+        window.location.assign("/login");
+      }
+    }
+    throw new ApiError(response.status, code, message);
   }
 
   return body as T;
