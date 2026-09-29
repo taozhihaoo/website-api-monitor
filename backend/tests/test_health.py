@@ -1,4 +1,3 @@
-from datetime import timedelta
 
 
 def test_health(client):

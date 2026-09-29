@@ -53,3 +53,24 @@ def client(db_engine):
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+PUBLIC_IP = "93.184.216.34"
+
+
+@pytest.fixture(autouse=True)
+def fake_dns(monkeypatch):
+    """Keep the whole suite offline: every hostname resolves to a public IP.
+
+    Individual tests can re-patch socket.getaddrinfo for specific scenarios.
+    """
+    import socket as socket_module
+
+    def fake_getaddrinfo(host, *args, **kwargs):
+        if host.startswith("unresolvable"):
+            raise socket_module.gaierror(
+                socket_module.EAI_NONAME, "Name or service not known"
+            )
+        return [(socket_module.AF_INET, socket_module.SOCK_STREAM, 6, "", (PUBLIC_IP, 0))]
+
+    monkeypatch.setattr(socket_module, "getaddrinfo", fake_getaddrinfo)

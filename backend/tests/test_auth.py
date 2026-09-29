@@ -16,7 +16,9 @@ class TestRegister:
         assert "password" not in body and "password_hash" not in body
 
     def test_register_normalizes_email_case(self, client):
-        client.post("/api/auth/register", json={"email": "Mixed@Example.COM", "password": "password123"})
+        client.post(
+            "/api/auth/register", json={"email": "Mixed@Example.COM", "password": "password123"}
+        )
         resp = client.post(
             "/api/auth/register", json={"email": "mixed@example.com", "password": "password123"}
         )
@@ -74,7 +76,8 @@ class TestLogin:
     def test_login_success(self, client):
         register_and_login(client, email="login@example.com")
         resp = client.post(
-            "/api/auth/login", json={"email": "login@example.com", "password": DEFAULT_PASSWORD}
+            "/api/auth/login",
+            json={"email": "login@example.com", "password": DEFAULT_PASSWORD},
         )
         assert resp.status_code == 200
         assert resp.json()["token_type"] == "bearer"
@@ -127,7 +130,12 @@ class TestTokenAuth:
 
     def test_token_signed_with_secret_rejected_when_different(self):
         token = auth_service.create_access_token(1, secret_key="key-a-0123456789abcdef-0123456789")
-        assert auth_service.decode_access_token(token, secret_key="key-b-0123456789abcdef-0123456789") is None
+        assert (
+            auth_service.decode_access_token(
+                token, secret_key="key-b-0123456789abcdef-0123456789"
+            )
+            is None
+        )
 
     def test_decode_token_returns_user_id(self):
         token = auth_service.create_access_token(42)

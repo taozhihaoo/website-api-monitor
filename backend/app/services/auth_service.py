@@ -1,6 +1,7 @@
+from datetime import UTC, datetime, timedelta
+
 import bcrypt
 import jwt
-from datetime import datetime, timedelta, timezone
 
 from app.config import get_settings
 
@@ -22,7 +23,7 @@ def create_access_token(
     user_id: int, expires_delta: timedelta | None = None, secret_key: str | None = None
 ) -> str:
     settings = get_settings()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     delta = expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
     payload = {"sub": str(user_id), "iat": now, "exp": now + delta}
     return jwt.encode(
