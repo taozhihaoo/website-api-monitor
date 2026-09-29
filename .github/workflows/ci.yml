@@ -91,7 +91,7 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npx playwright install --with-deps chromium
-      - name: Run E2E (real stack: uvicorn + vite + database)
+      - name: "Run E2E (real stack: uvicorn + vite + database)"
         working-directory: frontend
         run: npx playwright test
       - name: Upload failure artifacts
