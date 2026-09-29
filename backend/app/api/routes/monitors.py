@@ -1,13 +1,25 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from datetime import timedelta
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.database import get_db
+from app.models.base import utcnow
+from app.models.check import MonitorCheck
 from app.models.monitor import Monitor
 from app.models.user import User
-from app.schemas.monitor import CheckResponse, MonitorCreate, MonitorResponse, MonitorUpdate
-from app.services import check_service, monitor_service
+from app.schemas.monitor import (
+    CheckHistoryResponse,
+    CheckResponse,
+    LatencyStats,
+    MonitorCreate,
+    MonitorResponse,
+    MonitorUpdate,
+    UptimeResponse,
+)
+from app.services import check_service, monitor_service, uptime_service
 
 router = APIRouter(prefix="/api/monitors", tags=["monitors"])
 
@@ -39,7 +51,10 @@ def get_monitor(
     db: Session = Depends(get_db),
 ) -> MonitorResponse:
     monitor = monitor_service.get_owned_monitor(db, user.id, monitor_id)
-    return monitor_service.to_response(db, monitor)
+    response = monitor_service.to_response(db, monitor)
+    stats = uptime_service.latency_stats(db, monitor.id, timedelta(hours=24))
+    response.latency_stats = LatencyStats(**stats) if stats else None
+    return response
 
 
 @router.put("/{monitor_id}", response_model=MonitorResponse)
@@ -97,3 +112,43 @@ def disable_monitor(
         db, monitor_service.get_owned_monitor(db, user.id, monitor_id), False
     )
     return monitor_service.to_response(db, monitor)
+
+
+@router.get("/{monitor_id}/checks", response_model=CheckHistoryResponse)
+def list_checks(
+    monitor_id: int,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    hours: int = Query(default=24, ge=1, le=720),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CheckHistoryResponse:
+    monitor = monitor_service.get_owned_monitor(db, user.id, monitor_id)
+    cutoff = utcnow() - timedelta(hours=hours)
+    conditions = (
+        MonitorCheck.monitor_id == monitor.id,
+        MonitorCheck.checked_at >= cutoff,
+    )
+    total = db.scalar(
+        select(func.count(MonitorCheck.id)).where(*conditions)
+    ) or 0
+    items = db.scalars(
+        select(MonitorCheck)
+        .where(*conditions)
+        .order_by(MonitorCheck.checked_at.desc(), MonitorCheck.id.desc())
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    return CheckHistoryResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/{monitor_id}/uptime", response_model=UptimeResponse)
+def monitor_uptime(
+    monitor_id: int,
+    window: str = Query(default="24h"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UptimeResponse:
+    monitor = monitor_service.get_owned_monitor(db, user.id, monitor_id)
+    stats = uptime_service.uptime_stats(db, monitor.id, uptime_service.parse_window(window))
+    return UptimeResponse(monitor_id=monitor.id, window=window, **stats)

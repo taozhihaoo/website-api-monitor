@@ -75,6 +75,13 @@ class MonitorUpdate(BaseModel):
         return self
 
 
+class LatencyStats(BaseModel):
+    avg_ms: int
+    min_ms: int
+    max_ms: int
+    count: int
+
+
 class MonitorResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -107,9 +114,18 @@ class MonitorResponse(BaseModel):
 
     last_latency_ms: int | None = None
     uptime_24h: float | None = None
+    latency_stats: LatencyStats | None = None
 
     created_at: datetime
     updated_at: datetime
+
+
+class UptimeResponse(BaseModel):
+    monitor_id: int
+    window: str
+    total_checks: int
+    up_checks: int
+    uptime_percentage: float | None
 
 
 class CheckResponse(BaseModel):
@@ -127,3 +143,10 @@ class CheckResponse(BaseModel):
     json_result: str | None
     ssl_days_remaining: int | None
     ssl_status: str
+
+
+class CheckHistoryResponse(BaseModel):
+    items: list[CheckResponse]
+    total: int
+    limit: int
+    offset: int

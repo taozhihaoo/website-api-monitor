@@ -28,3 +28,4 @@ data/
 # OS / editor
 .DS_Store
 Thumbs.db
+.pytest-tmp/

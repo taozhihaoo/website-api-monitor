@@ -1,5 +1,7 @@
 """Monitor business logic. Routes never touch the database directly."""
 
+from datetime import timedelta
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -115,6 +117,7 @@ def latest_check(db: Session, monitor_id: int) -> MonitorCheck | None:
 def to_response(db: Session, monitor: Monitor) -> MonitorResponse:
     latest = latest_check(db, monitor.id)
     from app.monitoring.checker import classify_ssl_status
+    from app.services.uptime_service import uptime_stats
 
     if monitor.ssl_expires_at is None:
         if monitor.target_url.lower().startswith("https://") and (
@@ -141,5 +144,5 @@ def to_response(db: Session, monitor: Monitor) -> MonitorResponse:
         },
         ssl_status=ssl_status,
         last_latency_ms=latest.latency_ms if latest else None,
-        uptime_24h=None,
+        uptime_24h=uptime_stats(db, monitor.id, timedelta(hours=24))["uptime_percentage"],
     )
