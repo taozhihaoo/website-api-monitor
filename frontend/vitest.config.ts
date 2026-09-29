@@ -14,5 +14,7 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./tests/setup.ts"],
     css: false,
+    // Unit tests only — e2e/*.spec.ts belongs to the Playwright runner.
+    include: ["tests/**/*.{test,spec}.{ts,tsx}"],
   },
 });
