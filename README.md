@@ -60,6 +60,11 @@ monitors exist precisely to show failure handling._
 |---|---|
 | ![Incidents — ongoing and resolved with durations](docs/screenshots/incidents.png) | ![Swagger UI — the full REST API](docs/screenshots/api-docs.png) |
 
+**CI (GitHub Actions)** — the green run is the full workflow: backend matrix
+(Python 3.11/3.13 + Postgres), frontend unit tests + build, and Playwright E2E:
+
+![CI — all jobs green (backend matrix, frontend, e2e)](docs/screenshots/ci.png)
+
 ## Architecture
 
 ```
