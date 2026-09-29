@@ -70,6 +70,7 @@ export function LatencyChart({ checks }: { checks: Check[] | undefined }) {
             stroke="#3b82f6"
             strokeWidth={2}
             fill="url(#latencyFill)"
+            isAnimationActive={false}
           />
         </AreaChart>
       </ResponsiveContainer>

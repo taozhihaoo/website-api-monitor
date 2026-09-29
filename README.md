@@ -39,12 +39,24 @@ docker compose up -d    # → http://localhost:8080
 
 ## Screenshots
 
-_Screenshots in this section were taken against a local instance with the
-[demo seed data](#demo); numbers come from real checks of public endpoints._
+_Captured from a real running instance. The numbers come from genuine checks of
+public endpoints (example.com, httpbin.org, JSONPlaceholder) performed by this
+instance's own scheduler — including the intentionally broken monitors
+(`httpbin 503`, timeout, keyword/JSON mismatch) that demonstrate DOWN states,
+incidents and alerting. The `keyword failure demo` and `json mismatch demo`
+monitors exist precisely to show failure handling._
 
 | Dashboard | Monitor detail |
 |---|---|
-| _(run `docker compose up` and open http://localhost:8080 — or see the Demo section below for a scripted walkthrough)_ | _(latency chart, uptime strip, SSL card, history table)_ |
+| ![Dashboard — 7 monitors, UP/DOWN states, uptime strips, incidents](docs/screenshots/dashboard.png) | ![Monitor detail — latency chart, uptime, SSL 87d, check history](docs/screenshots/monitor-detail.png) |
+
+| Monitors | Create monitor |
+|---|---|
+| ![Monitors list with actions](docs/screenshots/monitors.png) | ![New monitor form (HTTP / keyword / JSON / SSL)](docs/screenshots/create-monitor.png) |
+
+| Incidents | Register |
+|---|---|
+| ![Incidents — ongoing and resolved with durations](docs/screenshots/incidents.png) | ![Register page](docs/screenshots/register.png) |
 
 ## Architecture
 
