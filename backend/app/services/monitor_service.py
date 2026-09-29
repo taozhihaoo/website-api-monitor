@@ -119,7 +119,7 @@ def to_response(db: Session, monitor: Monitor) -> MonitorResponse:
     from app.monitoring.checker import classify_ssl_status
     from app.services.uptime_service import uptime_stats
 
-    if monitor.ssl_expires_at is None:
+    if monitor.ssl_days_remaining is None and monitor.ssl_expires_at is None:
         if monitor.target_url.lower().startswith("https://") and (
             monitor.ssl_check_enabled or monitor.type == MONITOR_TYPE_SSL
         ):

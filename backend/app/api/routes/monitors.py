@@ -8,8 +8,10 @@ from app.api.deps import get_current_user
 from app.database import get_db
 from app.models.base import utcnow
 from app.models.check import MonitorCheck
+from app.models.incident import Incident
 from app.models.monitor import Monitor
 from app.models.user import User
+from app.schemas.incident import IncidentListResponse, IncidentResponse
 from app.schemas.monitor import (
     CheckHistoryResponse,
     CheckResponse,
@@ -152,3 +154,43 @@ def monitor_uptime(
     monitor = monitor_service.get_owned_monitor(db, user.id, monitor_id)
     stats = uptime_service.uptime_stats(db, monitor.id, uptime_service.parse_window(window))
     return UptimeResponse(monitor_id=monitor.id, window=window, **stats)
+
+
+@router.get("/{monitor_id}/incidents", response_model=IncidentListResponse)
+def monitor_incidents(
+    monitor_id: int,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> IncidentListResponse:
+    monitor = monitor_service.get_owned_monitor(db, user.id, monitor_id)
+    total = db.scalar(
+        select(func.count(Incident.id)).where(Incident.monitor_id == monitor.id)
+    ) or 0
+    incidents = db.scalars(
+        select(Incident)
+        .where(Incident.monitor_id == monitor.id)
+        .order_by(Incident.started_at.desc(), Incident.id.desc())
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    return IncidentListResponse(
+        items=[
+            IncidentResponse(
+                id=i.id,
+                monitor_id=i.monitor_id,
+                monitor_name=monitor.name,
+                started_at=i.started_at,
+                resolved_at=i.resolved_at,
+                duration_seconds=i.duration_seconds,
+                failure_count=i.failure_count,
+                cause=i.cause,
+                is_resolved=i.is_resolved,
+            )
+            for i in incidents
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )

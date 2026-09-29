@@ -16,6 +16,7 @@ class UserResponse(BaseModel):
 
     id: int
     email: str
+    webhook_url: str | None = None
     created_at: object
 
 

@@ -4,7 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import install_error_handlers
-from app.api.routes import auth, dashboard, monitors
+from app.api.routes import auth, dashboard, incidents, monitors, ssl
+from app.api.routes import settings as settings_routes
 from app.config import get_settings
 
 
@@ -43,6 +44,9 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(monitors.router)
     app.include_router(dashboard.router)
+    app.include_router(incidents.router)
+    app.include_router(ssl.router)
+    app.include_router(settings_routes.router)
 
     @app.get("/health", tags=["health"])
     def health() -> dict:
