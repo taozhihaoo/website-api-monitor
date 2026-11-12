@@ -1,14 +1,18 @@
-backend/__pycache__/
-backend/.venv/
-backend/.pytest-tmp/
-backend/*.db
-backend/.coverage
-node_modules/
-frontend/dist/
+# Patterns are relative to the build context root (docker-compose uses
+# `build: ./backend`), so they must NOT be prefixed with "backend/".
+__pycache__/
+*.pyc
+.venv/
+.pytest-tmp/
+.pytest_cache/
+.ruff_cache/
+*.db
+*.sqlite3
+.coverage
+htmlcov/
+.pip-install.log
+
+# Never bake local secrets or caches into the image.
 .env
 .env.*
 !.env.example
-__pycache__/
-*.pyc
-.ruff_cache/
-.pytest_cache/

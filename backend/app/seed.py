@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import Monitor, User
+from app.models.base import utcnow
 from app.services.auth_service import hash_password
 
 logger = logging.getLogger("sitewatch.seed")
@@ -95,9 +96,15 @@ def seed_demo_data(db: Session, password: str | None = None) -> tuple[User, list
             select(Monitor).where(Monitor.user_id == user.id, Monitor.name == spec["name"])
         )
         if existing is not None:
+            # Older seeds created monitors with next_check_at = NULL, which the
+            # scheduler never picks up. Repair them so demo data stays live.
+            if existing.next_check_at is None and existing.enabled:
+                existing.next_check_at = utcnow()
             monitors.append(existing)
             continue
-        monitor = Monitor(user_id=user.id, enabled=True, **spec)
+        monitor = Monitor(
+            user_id=user.id, enabled=True, next_check_at=utcnow(), **spec
+        )
         db.add(monitor)
         monitors.append(monitor)
     db.commit()

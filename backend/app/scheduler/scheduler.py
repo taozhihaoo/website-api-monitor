@@ -64,17 +64,28 @@ class Scheduler:
         self._running_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
-        self._pool = ThreadPoolExecutor(
-            max_workers=max_workers or settings.max_concurrent_checks,
+        self._max_workers = max_workers or settings.max_concurrent_checks
+        self._pool = self._new_pool()
+        self._pool_shutdown = False
+        self._last_retention_day: str | None = None
+
+    def _new_pool(self) -> ThreadPoolExecutor:
+        return ThreadPoolExecutor(
+            max_workers=self._max_workers,
             thread_name_prefix="sitewatch-check",
         )
-        self._last_retention_day: str | None = None
 
     # -- lifecycle ------------------------------------------------------------
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
             return
+        # A stopped executor never accepts work again. Rebuild it on restart,
+        # otherwise every submit raises RuntimeError and monitoring silently
+        # stops while the scan loop keeps running.
+        if self._pool_shutdown:
+            self._pool = self._new_pool()
+            self._pool_shutdown = False
         self._stop_event.clear()
         self._thread = threading.Thread(
             target=self._loop, name="sitewatch-scheduler", daemon=True
@@ -87,7 +98,8 @@ class Scheduler:
         if self._thread is not None:
             self._thread.join(timeout=10)
             self._thread = None
-        self._pool.shutdown(wait=False, cancel_futures=True)
+        self._pool.shutdown(wait=True, cancel_futures=True)
+        self._pool_shutdown = True
         logger.info("Scheduler stopped")
 
     # -- loop -------------------------------------------------------------------
@@ -135,8 +147,21 @@ class Scheduler:
                     return
                 checker = self.checker_factory() if self.checker_factory else None
                 run_check(db, monitor, checker)
-        except Exception:  # noqa: BLE001 — isolate single-monitor failures
-            logger.exception("Scheduled check failed for monitor %s", monitor_id)
+        except Exception as exc:  # noqa: BLE001 — isolate single-monitor failures
+            logger.exception(
+                "Scheduled check failed for monitor %s (%s)", monitor_id, type(exc).__name__
+            )
+            # next_check_at was advanced at dispatch time. If the worker died
+            # before persisting a result, put the monitor back into the due set
+            # instead of silently waiting a full interval (up to 24h).
+            try:
+                with self.session_factory() as db:
+                    monitor = db.get(Monitor, monitor_id)
+                    if monitor is not None and monitor.enabled:
+                        monitor.next_check_at = utcnow()
+                        db.commit()
+            except Exception:  # noqa: BLE001 — never let recovery break the loop
+                logger.exception("Could not reschedule monitor %s", monitor_id)
         finally:
             with self._running_lock:
                 self._running.discard(monitor_id)
@@ -145,9 +170,9 @@ class Scheduler:
         today = datetime.now(UTC).strftime("%Y-%m-%d")
         if self._last_retention_day == today:
             return
-        self._last_retention_day = today
         retention_days = get_settings().retention_days
         if retention_days <= 0:
+            self._last_retention_day = today
             return
         try:
             with self.session_factory() as db:
@@ -155,7 +180,11 @@ class Scheduler:
             if deleted:
                 logger.info("Retention: deleted %d checks older than %dd", deleted, retention_days)
         except Exception:  # noqa: BLE001
+            # Mark the day only on success — a transient DB error must not
+            # suppress retention for the rest of the day.
             logger.exception("Retention pass failed")
+            return
+        self._last_retention_day = today
 
     @property
     def running_monitor_ids(self) -> set[int]:

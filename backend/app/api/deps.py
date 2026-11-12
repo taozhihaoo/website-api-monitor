@@ -9,7 +9,12 @@ from app.services import auth_service
 
 _bearer = HTTPBearer(auto_error=False)
 
-UNAUTHORIZED = ApiError(401, "unauthorized", "Authentication required")
+
+def unauthorized() -> ApiError:
+    # A fresh instance per raise: reusing one exception object accumulates
+    # traceback frames (and the request locals they reference) for the lifetime
+    # of the process.
+    return ApiError(401, "unauthorized", "Authentication required")
 
 
 def get_current_user(
@@ -17,7 +22,7 @@ def get_current_user(
     db: Session = Depends(get_db),
 ) -> User:
     if credentials is None or not credentials.credentials:
-        raise UNAUTHORIZED
+        raise unauthorized()
     user_id = auth_service.decode_access_token(credentials.credentials)
     if user_id is None:
         raise ApiError(401, "unauthorized", "Invalid or expired token")

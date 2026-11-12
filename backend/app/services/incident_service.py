@@ -26,13 +26,25 @@ def _describe_cause(check: MonitorCheck) -> str:
     return "check failed"
 
 
-def active_incident(db: Session, monitor_id: int) -> Incident | None:
-    return db.scalar(
-        select(Incident)
-        .where(Incident.monitor_id == monitor_id, Incident.is_resolved.is_(False))
-        .order_by(Incident.id.desc())
-        .limit(1)
+def open_incidents(db: Session, monitor_id: int) -> list[Incident]:
+    """All unresolved incidents for a monitor (normally exactly one).
+
+    Returns a list so recovery can close *every* open incident. A concurrent
+    check could previously create two open incidents and leave one permanently
+    unresolved (zombie), inflating dashboard counts forever.
+    """
+    return list(
+        db.scalars(
+            select(Incident)
+            .where(Incident.monitor_id == monitor_id, Incident.is_resolved.is_(False))
+            .order_by(Incident.id.desc())
+        ).all()
     )
+
+
+def active_incident(db: Session, monitor_id: int) -> Incident | None:
+    incidents = open_incidents(db, monitor_id)
+    return incidents[0] if incidents else None
 
 
 def record_result(
@@ -60,12 +72,14 @@ def record_result(
         incident.failure_count += 1
         return incident, False, False
 
-    incident = active_incident(db, monitor.id)
-    if incident is not None:
+    incidents = open_incidents(db, monitor.id)
+    if not incidents:
+        return None, False, False
+    for incident in incidents:
         incident.is_resolved = True
         incident.resolved_at = now
         incident.duration_seconds = max(
             0, int((incident.resolved_at - incident.started_at).total_seconds())
         )
-        return incident, False, True
-    return None, False, False
+    # Report the newest incident for the recovery notification.
+    return incidents[0], False, True

@@ -12,6 +12,7 @@ Notification delivery failures must never flip a check result either.
 """
 
 import logging
+import threading
 from datetime import timedelta
 
 from sqlalchemy.orm import Session
@@ -25,12 +26,34 @@ from app.services.incident_service import record_result
 
 logger = logging.getLogger("sitewatch.engine")
 
+# A manual "check now" and a scheduled check can target the same monitor at the
+# same time (the scheduler only guards its own in-flight set). Serialising
+# results per monitor keeps the UP/DOWN state machine and incident dedup atomic
+# within a process — the deployment is explicitly single-instance.
+_locks_guard = threading.Lock()
+_monitor_locks: dict[int, threading.Lock] = {}
+
+
+def _lock_for(monitor_id: int) -> threading.Lock:
+    with _locks_guard:
+        return _monitor_locks.setdefault(monitor_id, threading.Lock())
+
 
 def run_check(
     db: Session,
     monitor: Monitor,
     checker: HTTPChecker | None = None,
     notifier: NotificationService | None = None,
+) -> MonitorCheck:
+    with _lock_for(monitor.id):
+        return _run_check_locked(db, monitor, checker, notifier)
+
+
+def _run_check_locked(
+    db: Session,
+    monitor: Monitor,
+    checker: HTTPChecker | None,
+    notifier: NotificationService | None,
 ) -> MonitorCheck:
     try:
         outcome = (checker or HTTPChecker()).check(monitor)

@@ -3,6 +3,7 @@
 from datetime import timedelta
 
 from sqlalchemy import case, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.errors import ApiError
@@ -13,26 +14,37 @@ from app.models.monitor import (
     MONITOR_TYPE_API_JSON,
     MONITOR_TYPE_KEYWORD,
     MONITOR_TYPE_SSL,
+    SSL_ALERT_NONE,
     STATUS_UP,
     Monitor,
 )
+from app.models.user import User
 from app.monitoring.url_guard import validate_public_http_url
 from app.schemas.monitor import MonitorCreate, MonitorResponse, MonitorUpdate
 
-NOT_FOUND = ApiError(404, "not_found", "Monitor not found")
+
+def not_found() -> ApiError:
+    # New instance per raise — a shared exception object retains traceback
+    # frames (and their request locals) for the whole process lifetime.
+    return ApiError(404, "not_found", "Monitor not found")
 
 
 def get_owned_monitor(db: Session, user_id: int, monitor_id: int) -> Monitor:
     monitor = db.get(Monitor, monitor_id)
     if monitor is None or monitor.user_id != user_id:
         # 404 (not 403) so ids of other users' monitors are not enumerable.
-        raise NOT_FOUND
+        raise not_found()
     return monitor
 
 
 def create_monitor(db: Session, user_id: int, payload: MonitorCreate) -> Monitor:
-    validate_public_http_url(payload.target_url)
+    # Use the guard's normalized return value; it strips surrounding whitespace.
+    target_url = validate_public_http_url(payload.target_url)
 
+    # Serialise per-user creation so the quota check cannot be raced by two
+    # concurrent requests. PostgreSQL honours FOR UPDATE; SQLite ignores it
+    # (tests are single-threaded), which is fine for local development.
+    db.get(User, user_id, with_for_update=True)
     count = (
         db.scalar(select(func.count(Monitor.id)).where(Monitor.user_id == user_id)) or 0
     )
@@ -47,7 +59,7 @@ def create_monitor(db: Session, user_id: int, payload: MonitorCreate) -> Monitor
         user_id=user_id,
         name=payload.name.strip(),
         type=payload.type,
-        target_url=payload.target_url.strip(),
+        target_url=target_url,
         enabled=payload.enabled,
         interval_seconds=payload.interval_seconds,
         timeout_seconds=payload.timeout_seconds,
@@ -61,7 +73,11 @@ def create_monitor(db: Session, user_id: int, payload: MonitorCreate) -> Monitor
         next_check_at=utcnow(),  # due immediately after creation
     )
     db.add(monitor)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ApiError(409, "conflict", "Monitor could not be created") from exc
     db.refresh(monitor)
     return monitor
 
@@ -72,7 +88,7 @@ def update_monitor(
     data = payload.model_dump(exclude_unset=True)
 
     if "target_url" in data:
-        validate_public_http_url(data["target_url"])
+        data["target_url"] = validate_public_http_url(data["target_url"])
 
     merged_type = data.get("type", monitor.type)
     merged_keyword = data.get("keyword", monitor.keyword)
@@ -86,6 +102,18 @@ def update_monitor(
         raise ApiError(422, "validation_error", "json_path is required when type is 'api_json'")
     if merged_type == MONITOR_TYPE_SSL and not merged_url.strip().lower().startswith("https://"):
         raise ApiError(422, "validation_error", "SSL monitors require an https:// URL")
+
+    # A different target (or turning the SSL sidecar off) invalidates the
+    # cached certificate and the alert-dedup state; otherwise the dashboard
+    # shows the old host's expiry and a genuine expiring/expired alert can be
+    # swallowed by the "state did not change" dedup rule.
+    url_changed = "target_url" in data and data["target_url"] != monitor.target_url
+    ssl_disabled = data.get("ssl_check_enabled") is False
+    if url_changed or ssl_disabled or ("type" in data and data["type"] != monitor.type):
+        monitor.ssl_expires_at = None
+        monitor.ssl_days_remaining = None
+        monitor.ssl_last_checked_at = None
+        monitor.ssl_alert_state = SSL_ALERT_NONE
 
     for field, value in data.items():
         setattr(monitor, field, value)

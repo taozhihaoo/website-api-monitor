@@ -12,6 +12,7 @@ from app.models.base import utcnow
 from app.models.user import User
 from app.monitoring.checker import classify_ssl_status
 from app.monitoring.ssl_checker import SSLChecker, SSLCheckError
+from app.monitoring.url_guard import UrlValidationError, validate_public_http_url
 from app.schemas.settings import SslInfoResponse
 from app.services.monitor_service import get_owned_monitor
 
@@ -37,11 +38,16 @@ def ssl_info(
         )
 
     if refresh:
-        parts = urlsplit(monitor.target_url)
+        # refresh=true opens a socket to a user-controlled target — apply the
+        # same SSRF guard as the checker, at request time.
         try:
+            validate_public_http_url(monitor.target_url)
+            parts = urlsplit(monitor.target_url)
             info = SSLChecker().fetch_certificate(
                 parts.hostname, parts.port or 443, timeout=monitor.timeout_seconds
             )
+        except UrlValidationError as exc:
+            raise ApiError(400, "invalid_url", exc.message)  # noqa: B904
         except SSLCheckError as exc:
             raise ApiError(502, "ssl_check_failed", str(exc))  # noqa: B904
         monitor.ssl_expires_at = info.expires_at

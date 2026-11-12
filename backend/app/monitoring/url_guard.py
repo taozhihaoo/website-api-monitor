@@ -77,13 +77,27 @@ def validate_public_http_url(
     if len(url) > MAX_URL_LENGTH:
         raise UrlValidationError("URL is too long")
 
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+    except ValueError as exc:
+        # urlsplit() itself raises on malformed IPv6 literals such as
+        # "http://[invalid/" — before .hostname is ever accessed.
+        raise UrlValidationError(f"Malformed URL: {exc}") from exc
     if parts.scheme.lower() not in ALLOWED_SCHEMES:
         raise UrlValidationError("URL scheme must be http or https")
     if parts.username or parts.password:
         raise UrlValidationError("Credentials embedded in URLs are not allowed")
 
-    host = parts.hostname
+    # ``.hostname`` / ``.port`` raise ValueError for malformed IPv6 literals,
+    # non-numeric or out-of-range ports. Surface those as a clean 400 instead
+    # of letting them escape as an unhandled 500 (or crash a checker).
+    try:
+        host = parts.hostname
+        port = parts.port
+    except ValueError as exc:
+        raise UrlValidationError(f"Malformed URL: {exc}") from exc
+    if port is not None and not 0 < port <= 65535:
+        raise UrlValidationError("URL port must be between 1 and 65535")
     if not host:
         raise UrlValidationError("URL has no host")
     host = host.rstrip(".")

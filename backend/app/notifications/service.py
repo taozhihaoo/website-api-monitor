@@ -73,8 +73,11 @@ class WebhookChannel:
                 transport=self._transport, timeout=self.timeout, trust_env=False
             ) as client:
                 response = client.post(self.url, json=payload)
-        except httpx.HTTPError as exc:
-            return STATUS_FAILED, str(exc)[:300]
+        except Exception as exc:  # noqa: BLE001 — delivery must never crash a check
+            # httpx.InvalidURL / UnicodeError are *not* subclasses of
+            # httpx.HTTPError. Catching only HTTPError let a malformed saved
+            # URL escape as a 500 and skip the notification audit row.
+            return STATUS_FAILED, f"{type(exc).__name__}: {exc}"[:300]
         if 200 <= response.status_code < 300:
             return STATUS_SENT, None
         return STATUS_FAILED, f"webhook endpoint returned HTTP {response.status_code}"

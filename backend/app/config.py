@@ -4,12 +4,16 @@ Every deployment-specific value comes from environment variables (optionally a
 local .env file, gitignored). No secrets are ever hardcoded.
 """
 
+import secrets
 from functools import lru_cache
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-INSECURE_DEFAULT_SECRET = "insecure-dev-secret-change-me-0123456789"
+# No secret is hardcoded in the source tree. Development instances get a
+# per-process random key (tokens are invalidated on restart, which is fine for
+# local work); production must supply SECRET_KEY explicitly.
+_DEV_SECRET = f"dev-{secrets.token_urlsafe(48)}"
 
 
 class Settings(BaseSettings):
@@ -20,7 +24,7 @@ class Settings(BaseSettings):
     app_env: str = "development"  # development | production
 
     # --- security ---
-    secret_key: str = INSECURE_DEFAULT_SECRET
+    secret_key: str = _DEV_SECRET
     access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
 
     # --- storage ---
@@ -69,7 +73,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _production_requires_secret(self) -> "Settings":
-        if self.is_production and self.secret_key == INSECURE_DEFAULT_SECRET:
+        if not self.secret_key.strip():
+            if self.is_production:
+                raise ValueError("SECRET_KEY must be set via environment when APP_ENV=production")
+            self.secret_key = _DEV_SECRET
+        if self.is_production and self.secret_key == _DEV_SECRET:
             raise ValueError("SECRET_KEY must be set via environment when APP_ENV=production")
         return self
 

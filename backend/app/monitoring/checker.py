@@ -123,7 +123,16 @@ class HTTPChecker:
     def _check_ssl_only(self, monitor: Monitor) -> CheckOutcome:
         outcome = CheckOutcome(status="up")
         started = time.perf_counter()
-        parts = urlsplit(monitor.target_url)
+        # Re-validate at execution time, not just at creation: a hostname can
+        # be re-pointed at a private/metadata address afterwards. The HTTP path
+        # guards every hop; the TLS-handshake path must do the same.
+        try:
+            validate_public_http_url(monitor.target_url)
+            parts = urlsplit(monitor.target_url)
+        except UrlValidationError as exc:
+            return _down(
+                outcome, ERROR_TYPE_CONNECTION, f"Blocked SSL target: {exc.message}"
+            )
         try:
             info = self._ssl_checker.fetch_certificate(
                 parts.hostname, parts.port or 443, timeout=monitor.timeout_seconds

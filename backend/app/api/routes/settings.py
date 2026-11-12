@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.api.errors import ApiError
+from app.api.routes.auth import _user_response
 from app.config import get_settings
 from app.database import get_db
 from app.models.user import User
@@ -21,16 +22,22 @@ def update_notification_settings(
     payload: NotificationSettingsUpdate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> User:
-    if payload.webhook_url:
-        validate_webhook_url(
-            payload.webhook_url,
+) -> UserResponse:
+    # Empty / whitespace-only input means "disable webhook" (null), not an
+    # empty string that silently skips validation and blocks all delivery.
+    raw = payload.webhook_url
+    normalized = raw.strip() if raw is not None else None
+    if not normalized:
+        normalized = None
+    else:
+        normalized = validate_webhook_url(
+            normalized,
             allow_private=get_settings().webhook_allow_private_ips,
         )
-    user.webhook_url = payload.webhook_url
+    user.webhook_url = normalized
     db.commit()
     db.refresh(user)
-    return user
+    return _user_response(user)
 
 
 @router.post("/notifications/test", response_model=NotificationTestResponse)

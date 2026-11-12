@@ -18,6 +18,9 @@ class UserResponse(BaseModel):
     email: str
     webhook_url: str | None = None
     created_at: object
+    # Lets the Settings page report the *actual* server-side SMTP state
+    # instead of claiming email alerts are always configured.
+    smtp_enabled: bool = False
 
 
 class TokenResponse(BaseModel):
