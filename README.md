@@ -2,17 +2,31 @@
 
 [![CI](https://github.com/taozhihaoo/website-api-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/taozhihaoo/website-api-monitor/actions/workflows/ci.yml)
 
+**English (default)** · [简体中文](README.zh-CN.md)
+
 A lightweight **self-hosted monitoring platform for websites and APIs** — scheduled
 checks, uptime history, response-time tracking, SSL certificate monitoring,
-incident tracking, alerts (webhook + email), and a web dashboard.
+incident tracking, alerts (webhook + email), and a polished bilingual web console.
 
-> Independent portfolio project, built and tested end-to-end. Single-process,
+> Independent project, built and tested end-to-end. Single-process,
 > single-instance by design — simple enough to run on one small VPS.
 
 ```bash
 cp .env.example .env    # set SECRET_KEY and POSTGRES_PASSWORD
 docker compose up -d    # → http://localhost:8080
 ```
+
+## Highlights
+
+- **Refined dark console** — aurora canvas, glass-elevated cards, gradient stat
+  tiles, custom inline icon set, animated status dots, responsive sidebar, and
+  reduced-motion support. No UI framework; hand-built design system on Tailwind 4.
+- **English + 简体中文 UI** — a language switch in the top bar (and on auth
+  screens) translates the entire interface, including validation messages,
+  date/relative-time formatting and chart tooltips. English is the default; the
+  choice is persisted in `localStorage`.
+- **Evidence-driven docs** — every screenshot below is captured from the real
+  running UI in the matching language (see [Screenshots](#screenshots)).
 
 ## Features
 
@@ -24,46 +38,54 @@ docker compose up -d    # → http://localhost:8080
   - **SSL** — certificate expiry via TLS handshake (`ssl`-only monitors, or a sidecar on HTTPS monitors)
 - **Scheduler** — every enabled monitor is checked on its interval (60s–24h);
   restart-safe (`next_check_at` persisted), bounded concurrency, one failing
-  monitor never blocks others
+  monitor never blocks others, and failed workers are re-queued instead of
+  silently waiting a full interval
 - **History & uptime** — every check persisted (status, HTTP code, latency, error,
   keyword/JSON/SSL results); uptime % for 1h/24h/7d/30d windows; latency avg/min/max;
   30-day retention (configurable)
 - **Incidents** — opens on UP→DOWN, extends while DOWN, closes on recovery,
-  with failure counts and duration
+  with failure counts and duration. A partial unique database index plus
+  per-monitor check serialization guarantee **one open incident per monitor**,
+  even if a manual check races a scheduled one
 - **Alerts** — webhook (per-user URL, configurable in the UI) and email (SMTP via env).
   **Deduplicated**: one alert per state change, not per failed check
 - **Auth** — local accounts (bcrypt-hashed passwords), JWT bearer tokens;
   all data is per-user and isolated (other users' monitors return 404)
-- **Security** — SSRF guard on every URL the server contacts (see below),
+- **Security** — SSRF guard on every URL the server contacts (see [Security](#security)),
   bounded response size, bounded retries, response timeouts, redirect limits
-- **Dashboard** — dark, data-dense UI: summary stats, latency chart, uptime strip,
-  check history, incidents, SSL expiry, create/edit/pause/delete/check-now
+- **Dashboard** — summary stats, latency chart, uptime strip, check history,
+  incidents, SSL expiry, create/edit/pause/delete/check-now
 
 ## Screenshots
 
-_Captured from a real running instance. The numbers come from genuine checks of
-public endpoints (example.com, httpbin.org, JSONPlaceholder) performed by this
-instance's own scheduler — including the intentionally broken monitors
-(`httpbin 503`, timeout, keyword/JSON mismatch) that demonstrate DOWN states,
-incidents and alerting. The `keyword failure demo` and `json mismatch demo`
-monitors exist precisely to show failure handling._
+All images below are the **English UI**. Captured from the real Vite UI with a
+deterministic demo dataset via `cd frontend && npm run screenshots` — the
+numbers are representative checks, including intentionally broken monitors that
+demonstrate DOWN states and incidents. Chinese equivalents live in
+[docs/screenshots/zh/](docs/screenshots/zh/) and are used by the
+[Chinese README](README.zh-CN.md).
 
 | Dashboard | Monitor detail |
 |---|---|
-| ![Dashboard — 7 monitors, UP/DOWN states, uptime strips, incidents](docs/screenshots/dashboard.png) | ![Monitor detail — latency chart, uptime, SSL 87d, check history](docs/screenshots/monitor-detail.png) |
+| ![Dashboard — 7 monitors, UP/DOWN states, uptime strips and stat tiles](docs/screenshots/en/dashboard.png) | ![Monitor detail — latency chart, uptime, SSL 87d, check history](docs/screenshots/en/monitor-detail.png) |
 
 | Monitors | Create monitor |
 |---|---|
-| ![Monitors list with actions](docs/screenshots/monitors.png) | ![New monitor form (HTTP / keyword / JSON / SSL)](docs/screenshots/create-monitor.png) |
+| ![Monitors list with row actions](docs/screenshots/en/monitors.png) | ![New monitor form with validation and SSL sidecar](docs/screenshots/en/create-monitor.png) |
 
-| Incidents | API docs |
+| Incidents | Settings |
 |---|---|
-| ![Incidents — ongoing and resolved with durations](docs/screenshots/incidents.png) | ![Swagger UI — the full REST API](docs/screenshots/api-docs.png) |
+| ![Incidents — ongoing and resolved with durations](docs/screenshots/en/incidents.png) | ![Settings — account, webhook and SMTP state](docs/screenshots/en/settings.png) |
 
-**CI (GitHub Actions)** — the green run is the full workflow: backend matrix
-(Python 3.11/3.13 + Postgres), frontend unit tests + build, and Playwright E2E:
+| Login |
+|---|
+| ![Login screen with the radar illustration](docs/screenshots/en/login.png) |
 
-![CI — all jobs green (backend matrix, frontend, e2e)](docs/screenshots/ci.png)
+Interactive API documentation (Swagger UI, English only):
+![Swagger UI — the full REST API](docs/screenshots/api-docs.png)
+
+**CI (GitHub Actions)** — backend matrix, frontend unit/build and Playwright E2E:
+![CI — all jobs green](docs/screenshots/ci.png)
 
 ## Architecture
 
@@ -74,7 +96,7 @@ Browser (React SPA) ──▶ nginx (frontend container: static files + /api pro
                      FastAPI backend (single process)
                        ├── REST API (routes → services, no logic in routes)
                        ├── Scheduler (daemon thread: scan due monitors)
-                       │     └── Check Engine (bounded thread pool)
+                       │     └── Check Engine (bounded thread pool, per-monitor lock)
                        │           ├── HTTPChecker (httpx, SSRF-guarded, redirects validated)
                        │           ├── KeywordRule / JSONRule (pure functions)
                        │           └── SSLChecker (TLS handshake + X.509)
@@ -97,6 +119,7 @@ pre-implementation design document.
 | Database | PostgreSQL 16 (SQLite supported for local dev/tests) |
 | Scheduler | Custom single-process scan loop + `ThreadPoolExecutor` (no Celery/Redis) |
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS 4, TanStack Query, react-router, Recharts |
+| i18n | Typed in-repo dictionaries (`en` / `zh`) with compile-time key-parity checks |
 | Tests | pytest (+httpx MockTransport), Vitest + Testing Library, Playwright E2E |
 | Infra | Docker + docker-compose (backend, frontend/nginx, postgres), GitHub Actions CI |
 
@@ -115,7 +138,7 @@ microservice splits — this is a small, mature product, not a distributed syste
 cd backend
 python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-export SECRET_KEY=dev-secret-change-me                 # Windows: set SECRET_KEY=...
+export SECRET_KEY=dev-secret-change-me                 # optional in development
 export APP_ENV=development
 alembic upgrade head
 uvicorn app.main:app --reload --port 8000              # API on :8000, docs on /docs
@@ -151,8 +174,8 @@ open http://localhost:8080
 > without a Docker daemon, so `docker compose up` could not be executed there.
 > The images and compose file follow standard practice (multi-stage builds,
 > healthchecks, non-root, env-injected secrets) and the application layer is
-> fully verified by the test suite and live run documented below — but the
-> compose path itself should be re-verified on a machine with Docker.
+> fully verified by the test suite — but the compose path itself should be
+> re-verified on a machine with Docker.
 
 ## Configuration
 
@@ -160,9 +183,9 @@ All configuration is via environment variables (see [.env.example](.env.example)
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SECRET_KEY` | *(required in production)* | JWT signing key |
+| `SECRET_KEY` | *(required in production)* | JWT signing key; development uses a per-process random key |
 | `DATABASE_URL` | `sqlite:///./sitewatch.db` | any SQLAlchemy URL (compose sets Postgres) |
-| `APP_ENV` | `development` | `production` refuses the dev default secret |
+| `APP_ENV` | `development` | `production` refuses a missing/empty secret |
 | `MAX_MONITORS_PER_USER` | `50` | per-account monitor limit |
 | `MAX_CONCURRENT_CHECKS` | `10` | scheduler worker pool size |
 | `SCHEDULER_SCAN_INTERVAL_SECONDS` | `10` | due-scan cadence |
@@ -177,10 +200,11 @@ All configuration is via environment variables (see [.env.example](.env.example)
 
 - `POST /api/auth/register` → 201 (email + password ≥ 8 chars)
 - `POST /api/auth/login` → `{access_token, token_type: "bearer"}`
-- `GET /api/auth/me` with `Authorization: Bearer <token>`
+- `GET /api/auth/me` with `Authorization: Bearer <token>` (also reports `smtp_enabled`)
 
 Passwords are bcrypt-hashed (never stored plaintext, never logged). Tokens are
-HS256 JWTs. There is no OAuth/RBAC by design.
+HS256 JWTs. Unknown-email logins perform the same bcrypt work as wrong-password
+logins to avoid timing-based account enumeration. There is no OAuth/RBAC by design.
 
 ## Creating a Monitor
 
@@ -190,7 +214,9 @@ In the UI: **Monitors → + New monitor**. Via API: `POST /api/monitors` with
 type-specific fields (`keyword`+`keyword_mode`, `json_path`+`json_expected_value`,
 `ssl_check_enabled`+`ssl_warning_days`).
 
-Every target URL is validated at creation **and at request time** (see SSRF below).
+Every target URL is validated at creation **and at request time** (see [Security](#security)).
+Changing `target_url` or the monitor type clears cached SSL data and re-arms SSL
+alerting so a new certificate cannot be hidden by stale dedup state.
 
 ## Monitor Types & Status Rules
 
@@ -207,7 +233,8 @@ Every target URL is validated at creation **and at request time** (see SSRF belo
 ## Alerts
 
 Channels: **webhook** (per-user URL, Settings page, "Send test" button) and
-**email** (server-wide SMTP via env; disabled unless fully configured).
+**email** (server-wide SMTP via env; disabled unless fully configured). Blank
+webhook input is stored as `null` (disabled), never as an empty string.
 
 Payload example:
 
@@ -233,8 +260,10 @@ the `notifications` table (sent/failed/skipped).
 - `GET /api/monitors/{id}/checks?hours=1|24|168|720&limit=&offset=` (paginated, newest first)
 - `GET /api/monitors/{id}/uptime?window=1h|24h|7d|30d` — only checks that actually
   exist in the window are counted (no future projection)
+- The detail page's 1h/24h/7d/30d selector drives **both** the uptime card and
+  the history table, so the two never disagree
 - Retention: checks older than `RETENTION_DAYS` (default 30) are pruned daily by
-  the scheduler
+  the scheduler; a failed pass is retried on the next scan
 
 ## REST API
 
@@ -259,7 +288,29 @@ Errors use one envelope and never leak tracebacks or DB details:
 {"error": {"code": "not_found", "message": "Monitor not found"}}
 ```
 
-## Security / SSRF Protection
+## Internationalization
+
+The UI ships two complete dictionaries in
+[`frontend/src/i18n/messages.ts`](frontend/src/i18n/messages.ts). Chinese is
+typed as `Record<keyof typeof en, string>`, so a missing translation fails
+`npm run typecheck` in CI. To switch language, use the **EN / 中文** toggle in
+the top bar or on the login screen; the preference is stored in
+`localStorage["sitewatch_locale"]` and `<html lang>` is updated accordingly.
+Server-side data (monitor names, incident causes, API error messages) is not
+translated — it belongs to the user or the monitored system.
+
+To regenerate all README screenshots after a UI change:
+
+```bash
+cd frontend && npm run screenshots
+```
+
+This starts a local Vite server and drives a headless Chromium through a
+deterministic demo dataset (no backend or external network required), writing
+`docs/screenshots/en/*.png`, `docs/screenshots/zh/*.png` and
+`docs/screenshots/screenshots.json`.
+
+## Security
 
 SiteWatch is a tool that fetches URLs on command, so SSRF is treated seriously:
 
@@ -270,54 +321,66 @@ SiteWatch is a tool that fetches URLs on command, so SSRF is treated seriously:
   unspecified and IPv6 equivalents (`::1`, `fe80::/10`, `fc00::/7`,
   IPv4-mapped `::ffff:10.0.0.1`) are all rejected
 - Literal IP targets are parsed directly and never resolved via DNS
+- **Malformed IPv6 literals and non-numeric / out-of-range ports** are rejected
+  with a clean `400 invalid_url` instead of escaping as a 500
 - Redirects are followed manually (max 5) and **re-validated at every hop**
+- **TLS/SSL paths re-validate the target at execution time**, not just at monitor
+  creation, so a hostname re-pointed to a private address cannot be reached via
+  an `ssl`-only monitor or `/api/ssl/{id}?refresh=true`
 - Webhook URLs go through the same guard (`WEBHOOK_ALLOW_PRIVATE_IPS=true`
-  opts a self-hosted admin out, deliberately)
+  opts a self-hosted admin out, deliberately); empty webhook input is normalised
+  to `null`
 - Additional hardening: per-check timeout, bounded retries with backoff,
   2 MB response cap, custom `User-Agent`, parameterized queries only
-  (SQLAlchemy), bcrypt password hashing, JWT secret from env (refuses the
-  dev default in production), unified error envelope, per-user monitor cap
+  (SQLAlchemy), bcrypt password hashing, constant-work login for unknown
+  accounts, JWT secret from env (no hardcoded default; development uses a
+  per-process random key), unified error envelope, per-user monitor cap
+- No shared exception instances are re-raised (avoids traceback-frame retention)
 
-Known limitation: the hostname is re-resolved by the HTTP client after the guard
-validates it, so a DNS-rebinding race is mitigated but not eliminated (no
+**Known limitation:** the hostname is re-resolved by the HTTP client after the
+guard validates it, so a DNS-rebinding race is mitigated but not eliminated (no
 connect-IP pinning). Acceptable for a self-hosted single-tenant tool; documented
-honestly rather than hidden.
+honestly rather than hidden. Access tokens are valid for 7 days and logout only
+clears the client-side token (there is no server-side revocation list) — do not
+share an instance with untrusted users.
 
 ## Testing
 
 ```bash
-cd backend  && .venv/Scripts/python -m pytest -q        # 228 tests
-cd frontend && npm test                                  # 28 unit tests
-cd frontend && npx playwright test                       # 11 E2E tests
+cd backend  && python -m pytest -q          # 244 tests
+cd frontend && npm test                     # 38 unit tests
+cd frontend && npx playwright test          # 12 E2E tests
+python scripts/check_docs.py                # README + screenshot validation
 ```
 
 - Backend: fully offline — all HTTP via `httpx.MockTransport`, SSL via a fake
   certificate provider, DNS via a stubbed resolver. Covers auth, password
-  hashing, JWT, monitor CRUD + validation, URL/SSRF guard, checkers (timeout,
-  retry/backoff, status mismatch, redirect blocking, response caps), keyword,
-  JSON, SSL, incident transitions, notification dedup, uptime math, retention,
-  scheduler semantics, pagination, and ownership isolation
-- Frontend: Vitest + Testing Library — login/register validation + server errors,
-  dashboard (stats/empty/error/retry), monitor list + create-form validation,
-  badges, uptime strip, formatters
-- **E2E (Playwright)**: 11 tests against the real running stack (vite dev server →
+  hashing, JWT, monitor CRUD + validation, URL/SSRF guard (incl. malformed
+  hosts/ports), checkers, keyword/JSON/SSL rules, incident transitions and
+  duplicate-open-incident recovery, notification dedup, uptime math, retention,
+  scheduler semantics and restart, pagination, and ownership isolation
+- Frontend: Vitest + Testing Library — auth validation, dashboard (stats/empty/
+  error/retry), monitor list + create-form validation (including custom
+  intervals), badges, uptime strip, formatters, **i18n dictionary parity and
+  locale switching**, query-cache keys and window→hours mapping
+- **E2E (Playwright)**: 12 tests against the real running stack (vite dev server →
   API → database, no mocks): register → dashboard, invalid login, logout/login,
   monitor creation, form validation, private-URL rejection, manual check with
   history polling, incident open → recovery → duration, disable/pause,
-  delete with confirmation, and a 404-monitor error state. Uses locator
-  auto-waiting and explicit `expect.poll` conditions — no sleeps, no screen
-  coordinates; each run starts from a fresh database. Local runs use SQLite
-  (identical models/migrations); PostgreSQL is exercised by the CI pytest job
+  delete with confirmation, a 404-monitor error state, and the EN/中文 language
+  switch. Uses locator auto-waiting and explicit `expect.poll` conditions — no
+  sleeps, no screen coordinates; each run starts from a fresh database
 - CI (GitHub Actions): backend on Python 3.11 & 3.13 **against a real Postgres 16
-  service** (migration check + full suite), frontend typecheck + tests + build,
-  and the Playwright E2E job
+  service** (migration up/down check + full suite), frontend typecheck + tests +
+  production build, docs/screenshot validation, and the Playwright E2E job
 
 ## CI
 
-`.github/workflows/ci.yml` — three jobs: `backend` (Python 3.11 + 3.13 matrix with
-Postgres 16 service: ruff, `alembic upgrade head`, pytest with coverage),
-`frontend` (typecheck, Vitest, production build), and `e2e` (Playwright against
-the real stack). No external secrets required.
+`.github/workflows/ci.yml` — four jobs: `backend` (Python 3.11 + 3.13 matrix with
+Postgres 16 service: ruff over `app tests alembic`, `alembic upgrade head`,
+`downgrade base` round-trip, pytest with coverage), `frontend` (typecheck,
+Vitest, production build), `docs` (bilingual README + screenshot asset validation),
+and `e2e` (Playwright against the real stack). No external secrets required.
 
 ## Demo
 
@@ -329,10 +392,10 @@ APP_ENV=development python -m app.seed
 Creates `demo@sitewatch.local` (password from `DEMO_PASSWORD`, or generated and
 printed once) and four monitors: example.com (HTTP+keyword+SSL), httpbin 200
 (up), **httpbin 503 (permanently down — demonstrates DOWN + incident +
-alert-once)**, and a JSONPlaceholder JSON health check. Seed refuses to run with
-`APP_ENV=production`. Numbers shown for these monitors in a demo come from real
-checks of those public endpoints, at their configured intervals (5–10 min, to
-avoid spamming them).
+alert-once)**, and a JSONPlaceholder JSON health check. Seed monitors are marked
+due immediately so the scheduler starts checking them right away; re-seeding
+repairs older rows with a `NULL` `next_check_at`. Seed refuses to run with
+`APP_ENV=production`.
 
 ## Project Structure
 
@@ -347,13 +410,19 @@ avoid spamming them).
 │   │   ├── scheduler/         # scan loop + bounded worker pool
 │   │   ├── models/            # SQLAlchemy models
 │   │   ├── config.py, database.py, main.py, seed.py
-│   ├── alembic/               # migrations
+│   ├── alembic/versions/      # 0001 initial schema, 0002 one-open-incident index
 │   ├── tests/                 # pytest suite (offline)
 │   └── Dockerfile
 ├── frontend/
-│   ├── src/{api,auth,components,pages,utils}
+│   ├── src/{api,auth,components,i18n,pages,utils}
 │   ├── tests/                 # vitest suite
+│   ├── e2e/                   # Playwright specs
+│   ├── scripts/               # screenshot capture
 │   ├── nginx.conf  Dockerfile
+├── docs/screenshots/{en,zh}   # localized UI screenshots
+├── scripts/check_docs.py      # README + asset validation (used in CI)
+├── README.md                  # English (default)
+├── README.zh-CN.md            # 简体中文
 ├── docs/DESIGN.md             # pre-implementation design (A–J)
 ├── docker-compose.yml
 └── .github/workflows/ci.yml
@@ -363,18 +432,49 @@ avoid spamming them).
 
 Stated plainly:
 
-- **Independent portfolio project** — built solo, not a customer deliverable
+- **Independent project** — built solo, not a customer deliverable
 - **Single-instance scheduler** — run exactly one backend process per database;
   no distributed workers, no HA
 - **PostgreSQL in production** (SQLite is fine for trying it out locally)
 - **Public HTTP/HTTPS monitoring only** — no browser-level/transaction checks,
   no ICMP/TCP/DNS check types
 - **No multi-user teams / RBAC / OAuth** — one account = one user
+- **No token revocation list** — logout is client-side only (see Security)
 - **No Kubernetes, no message queues** — intentional
 - **No external paid services required** for basic usage; email alerts need any SMTP account
 - **Docker compose path not executed in the development environment** (no Docker
   daemon available there) — see the note in the Docker section
-- DNS-rebinding TOCTOU is mitigated, not eliminated (see Security section)
+- DNS-rebinding TOCTOU is mitigated, not eliminated (see Security)
+- UI is translated; server-side values (monitor names, causes, API errors) are not
 
 Nothing here claims to be "production-ready" or "enterprise-grade" beyond the
 evidence in this README and the test suite.
+
+## License
+
+This project is released under the **MIT License**. See [LICENSE](LICENSE) for
+the full text.
+
+```
+MIT License
+
+Copyright (c) 2026 SiteWatch contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
