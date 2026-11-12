@@ -30,3 +30,8 @@ data/
 Thumbs.db
 .pytest-tmp/
 .live/
+.tmp/
+.pip-install.log
+
+# Local WorkBuddy workspace memory (project-related, but not versioned)
+.workbuddy/
