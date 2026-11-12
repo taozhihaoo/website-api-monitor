@@ -8,6 +8,8 @@ export interface User {
   email: string;
   webhook_url: string | null;
   created_at: string;
+  /** Server-side SMTP configuration state (GET /api/auth/me). */
+  smtp_enabled?: boolean;
 }
 
 export interface LatencyStats {

@@ -1,24 +1,30 @@
-const STYLES: Record<string, { dot: string; text: string; label: string }> = {
-  up: { dot: "bg-emerald-500", text: "text-emerald-400", label: "UP" },
-  down: { dot: "bg-red-500", text: "text-red-400", label: "DOWN" },
-  paused: { dot: "bg-slate-500", text: "text-slate-400", label: "PAUSED" },
-  pending: { dot: "bg-blue-500", text: "text-blue-400", label: "PENDING" },
-  valid: { dot: "bg-emerald-500", text: "text-emerald-400", label: "SSL OK" },
-  expiring_soon: { dot: "bg-amber-500", text: "text-amber-400", label: "SSL EXPIRING" },
-  expired: { dot: "bg-red-500", text: "text-red-400", label: "SSL EXPIRED" },
-  unknown: { dot: "bg-slate-600", text: "text-slate-400", label: "SSL ?" },
-  not_applicable: { dot: "bg-slate-700", text: "text-slate-500", label: "SSL N/A" },
+import { useI18n } from "../i18n/I18nContext";
+import type { MessageKey } from "../i18n/messages";
+
+type BadgeStyle = { color: string; labelKey: MessageKey };
+
+const STYLES: Record<string, BadgeStyle> = {
+  up: { color: "var(--up)", labelKey: "status.up" },
+  down: { color: "var(--down)", labelKey: "status.down" },
+  paused: { color: "var(--paused)", labelKey: "status.paused" },
+  pending: { color: "#60a5fa", labelKey: "status.pending" },
+  valid: { color: "var(--up)", labelKey: "status.sslOk" },
+  expiring_soon: { color: "var(--warn)", labelKey: "status.sslExpiring" },
+  expired: { color: "var(--down)", labelKey: "status.sslExpired" },
+  unknown: { color: "var(--paused)", labelKey: "status.sslUnknown" },
+  not_applicable: { color: "#52627d", labelKey: "status.sslNa" },
 };
 
 export function StatusBadge({ status }: { status: string | null | undefined }) {
-  const key = status || "pending";
-  const style = STYLES[key] || STYLES.pending;
+  const { t } = useI18n();
+  const style = STYLES[status || "pending"] || STYLES.pending;
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border border-slate-700/70 bg-slate-900 px-2 py-0.5 text-[11px] font-semibold tracking-wide ${style.text}`}
+      className="sw-badge"
+      style={{ color: style.color, borderColor: "color-mix(in srgb, currentColor 28%, transparent)" }}
     >
-      <span className={`h-2 w-2 rounded-full ${style.dot}`} aria-hidden="true" />
-      {style.label}
+      <span className="sw-dot" aria-hidden="true" />
+      {t(style.labelKey)}
     </span>
   );
 }

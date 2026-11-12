@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
+  WINDOW_HOURS,
   useCheckNow,
   useChecks,
   useDeleteMonitor,
@@ -13,8 +14,23 @@ import {
 } from "../api/hooks";
 import { ErrorBanner, Spinner, StatCard } from "../components/Feedback";
 import { LatencyChart } from "../components/LatencyChart";
+import {
+  ActivityIcon,
+  ArrowRightIcon,
+  ClockIcon,
+  ExternalIcon,
+  PauseIcon,
+  PlayIcon,
+  RadarIcon,
+  RefreshIcon,
+  ShieldIcon,
+  SignalIcon,
+  TrashIcon,
+} from "../components/Icons";
 import { StatusBadge } from "../components/StatusBadge";
 import { UptimeStrip } from "../components/UptimeStrip";
+import { useI18n } from "../i18n/I18nContext";
+import type { MessageKey } from "../i18n/messages";
 import {
   formatDateTime,
   formatDuration,
@@ -25,20 +41,27 @@ import {
 } from "../utils/format";
 
 const WINDOWS = [
-  { value: "1h", label: "1h" },
-  { value: "24h", label: "24h" },
-  { value: "7d", label: "7d" },
-  { value: "30d", label: "30d" },
-];
+  { value: "1h", labelKey: "detail.window1h" },
+  { value: "24h", labelKey: "detail.window24h" },
+  { value: "7d", labelKey: "detail.window7d" },
+  { value: "30d", labelKey: "detail.window30d" },
+] as const satisfies readonly { value: string; labelKey: MessageKey }[];
+
+const WINDOW_LABEL_KEY: Record<string, MessageKey> = Object.fromEntries(
+  WINDOWS.map((w) => [w.value, w.labelKey]),
+);
 
 export function MonitorDetailPage() {
+  const { t, locale } = useI18n();
   const { id } = useParams();
   const monitorId = id ? Number(id) : undefined;
   const navigate = useNavigate();
 
   const monitor = useMonitor(monitorId);
-  const [window_, setWindow_] = useState("24h");
-  const checks = useChecks(monitorId, 24, 100);
+  const [window_, setWindow_] = useState<string>("24h");
+  // The history table must follow the selected window. Previously it always
+  // requested 24h while the uptime card showed 7d/30d — inconsistent data.
+  const checks = useChecks(monitorId, WINDOW_HOURS[window_] ?? 24, 100);
   const uptime = useUptime(monitorId, window_);
   const incidents = useMonitorIncidents(monitorId);
   const ssl = useSslInfo(monitorId);
@@ -49,7 +72,7 @@ export function MonitorDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   if (monitor.isLoading) {
-    return <Spinner label="Loading monitor…" />;
+    return <Spinner label={t("feedback.loadingMonitor")} />;
   }
   if (monitor.isError) {
     return (
@@ -77,35 +100,44 @@ export function MonitorDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold">{m.name}</h1>
+      <div className="sw-section-heading">
+        <div className="min-w-0">
+          <Link to="/monitors" className="sw-link mb-3 !text-[11.5px]">
+            ← {t("action.backToMonitors")}
+          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="sw-page-title">{m.name}</h1>
             <StatusBadge status={status} />
           </div>
           <a
             href={m.target_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="break-all text-sm text-blue-400 hover:text-blue-300"
+            className="mt-2 inline-flex max-w-full items-center gap-1.5 break-all text-[12.5px] text-indigo-300 transition hover:text-indigo-200"
           >
             {m.target_url}
+            <ExternalIcon size={13} className="shrink-0" />
           </a>
-          <p className="mt-1 text-xs text-slate-500">
-            {m.type} · every {formatInterval(m.interval_seconds)} · timeout {m.timeout_seconds}s
-            · last checked {formatRelative(m.last_checked_at)}
+          <p className="mt-2 text-[11.5px] text-slate-500">
+            {t("detail.meta", {
+              type: m.type,
+              interval: formatInterval(m.interval_seconds, locale),
+              timeout: m.timeout_seconds,
+              last: formatRelative(m.last_checked_at, locale),
+            })}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 text-sm">
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
             disabled={checkNow.isPending}
             onClick={() =>
               checkNow.mutate(m.id, { onError: (error) => setActionError(error.message) })
             }
-            className="rounded-md bg-blue-600 px-3 py-1.5 font-semibold text-white transition hover:bg-blue-500 disabled:opacity-60"
+            className="sw-btn sw-btn-primary"
           >
-            {checkNow.isPending ? "Checking…" : "Check now"}
+            <RefreshIcon size={15} />
+            {checkNow.isPending ? t("action.checking") : t("action.checkNow")}
           </button>
           <button
             type="button"
@@ -115,33 +147,31 @@ export function MonitorDetailPage() {
                 { onError: (error) => setActionError(error.message) },
               )
             }
-            className="rounded-md border border-slate-700 px-3 py-1.5 font-medium text-slate-300 transition hover:bg-slate-800"
+            className="sw-btn sw-btn-ghost"
           >
-            {m.enabled ? "Pause" : "Resume"}
+            {m.enabled ? <PauseIcon size={15} /> : <PlayIcon size={15} />}
+            {m.enabled ? t("action.pause") : t("action.resume")}
           </button>
           <button
             type="button"
             onClick={handleDelete}
-            className={`rounded-md border px-3 py-1.5 font-medium transition ${
-              confirmDelete
-                ? "border-red-500 bg-red-600 text-white"
-                : "border-slate-700 text-slate-300 hover:bg-slate-800"
-            }`}
+            className={`sw-btn ${confirmDelete ? "sw-btn-danger" : "sw-btn-ghost"}`}
           >
-            {confirmDelete ? "Confirm delete?" : "Delete"}
+            <TrashIcon size={15} />
+            {confirmDelete ? t("action.confirmDelete") : t("action.delete")}
           </button>
         </div>
       </div>
 
       {actionError && <ErrorBanner message={actionError} onRetry={() => setActionError(null)} />}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard label="Current latency" value={formatMs(m.last_latency_ms)} tone="accent" />
-        <StatCard label="Avg latency" value={latency ? formatMs(latency.avg_ms) : "—"} />
-        <StatCard label="Min latency" value={latency ? formatMs(latency.min_ms) : "—"} />
-        <StatCard label="Max latency" value={latency ? formatMs(latency.max_ms) : "—"} />
+      <div className="sw-stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <StatCard label={t("detail.currentLatency")} value={formatMs(m.last_latency_ms)} tone="accent" icon={<SignalIcon size={13} />} />
+        <StatCard label={t("detail.avgLatency")} value={latency ? formatMs(latency.avg_ms) : "—"} icon={<ActivityIcon size={13} />} />
+        <StatCard label={t("detail.minLatency")} value={latency ? formatMs(latency.min_ms) : "—"} />
+        <StatCard label={t("detail.maxLatency")} value={latency ? formatMs(latency.max_ms) : "—"} />
         <StatCard
-          label={`Uptime ${window_}`}
+          label={t("detail.uptime", { window: t(WINDOW_LABEL_KEY[window_] ?? "detail.window24h") })}
           value={formatPercent(uptime.data?.uptime_percentage)}
           tone={
             uptime.data?.uptime_percentage !== null &&
@@ -150,10 +180,10 @@ export function MonitorDetailPage() {
               ? "down"
               : "up"
           }
-          sub={uptime.data ? `${uptime.data.total_checks} checks` : undefined}
+          sub={uptime.data ? t("detail.checks", { count: uptime.data.total_checks }) : undefined}
         />
         <StatCard
-          label="SSL"
+          label={t("detail.ssl")}
           value={
             ssl.data && ssl.data.days_remaining !== null
               ? `${ssl.data.days_remaining}d`
@@ -161,6 +191,7 @@ export function MonitorDetailPage() {
                 ? "n/a"
                 : "—"
           }
+          icon={<ShieldIcon size={13} />}
           tone={
             ssl.data?.ssl_status === "expired"
               ? "down"
@@ -174,9 +205,10 @@ export function MonitorDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 lg:col-span-2">
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">
-            Response time
+        <section className="sw-card p-5 lg:col-span-2">
+          <h2 className="sw-card-title mb-4">
+            <ActivityIcon size={15} />
+            {t("detail.responseTime")}
           </h2>
           {checks.isError ? (
             <ErrorBanner
@@ -188,99 +220,91 @@ export function MonitorDetailPage() {
           )}
         </section>
 
-        <section className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">
-            Recent checks
+        <section className="sw-card p-5">
+          <h2 className="sw-card-title mb-4">
+            <RadarIcon size={15} />
+            {t("detail.recentChecks")}
           </h2>
           <UptimeStrip checks={checks.data?.items} max={40} />
-          <dl className="mt-4 space-y-1.5 text-sm">
-            <div className="flex justify-between">
-              <dt className="text-slate-500">Expected status</dt>
-              <dd className="tabular-nums text-slate-300">HTTP {m.expected_status}</dd>
+          <dl className="mt-5 space-y-2 text-[12.5px]">
+            <div className="flex justify-between gap-3">
+              <dt className="text-slate-500">{t("detail.expectedStatus")}</dt>
+              <dd className="tabular-nums text-slate-200">{t("format.httpPrefix", { code: m.expected_status })}</dd>
             </div>
             {m.keyword && (
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-500">Keyword ({m.keyword_mode})</dt>
-                <dd className="truncate text-slate-300">“{m.keyword}”</dd>
+                <dt className="text-slate-500">{t("detail.keyword", { mode: m.keyword_mode })}</dt>
+                <dd className="truncate text-slate-200">“{m.keyword}”</dd>
               </div>
             )}
             {m.json_path && (
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-500">JSON path</dt>
-                <dd className="truncate text-slate-300">
+                <dt className="text-slate-500">{t("detail.jsonPath")}</dt>
+                <dd className="truncate text-slate-200">
                   {m.json_path}
                   {m.json_expected_value ? ` = ${m.json_expected_value}` : ""}
                 </dd>
               </div>
             )}
-            <div className="flex justify-between">
-              <dt className="text-slate-500">Next check</dt>
-              <dd className="text-slate-300">{formatRelative(m.next_check_at)}</dd>
+            <div className="flex justify-between gap-3">
+              <dt className="text-slate-500">{t("detail.nextCheck")}</dt>
+              <dd className="text-slate-200">{formatRelative(m.next_check_at, locale)}</dd>
             </div>
-            <div className="flex justify-between">
-              <dt className="text-slate-500">Created</dt>
-              <dd className="text-slate-300">{formatDateTime(m.created_at)}</dd>
+            <div className="flex justify-between gap-3">
+              <dt className="text-slate-500">{t("detail.created")}</dt>
+              <dd className="text-slate-200">{formatDateTime(m.created_at, locale)}</dd>
             </div>
           </dl>
         </section>
       </div>
 
-      <section className="rounded-xl border border-slate-800 bg-slate-900">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-4 py-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
-            Check history
+      <section className="sw-card overflow-hidden">
+        <div className="sw-card-head">
+          <h2 className="sw-card-title">
+            <ClockIcon size={15} />
+            {t("detail.checkHistory")}
           </h2>
-          <div className="flex gap-1">
+          <div className="sw-lang !p-[2px]">
             {WINDOWS.map((w) => (
               <button
                 key={w.value}
                 type="button"
                 onClick={() => setWindow_(w.value)}
-                className={`rounded px-2.5 py-1 text-xs font-medium transition ${
-                  window_ === w.value
-                    ? "bg-blue-600/20 text-blue-400"
-                    : "text-slate-400 hover:bg-slate-800"
-                }`}
+                className={window_ === w.value ? "active" : ""}
               >
-                {w.label}
+                {t(w.labelKey)}
               </button>
             ))}
           </div>
         </div>
         {uptime.data && (
-          <p className="px-4 pt-3 text-xs text-slate-500">
-            {window_} uptime:{" "}
-            <span className="font-semibold text-slate-300">
+          <p className="px-5 pt-4 text-[11.5px] text-slate-500">
+            {t("detail.uptimeSummary", { window: t(WINDOW_LABEL_KEY[window_] ?? "detail.window24h") })}{" "}
+            <span className="font-semibold text-slate-200">
               {formatPercent(uptime.data.uptime_percentage)}
             </span>{" "}
-            ({uptime.data.up_checks}/{uptime.data.total_checks} checks)
+            ({uptime.data.up_checks}/{uptime.data.total_checks} {t("detail.checksUnit")})
           </p>
         )}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
+          <table className="sw-table min-w-[640px]">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-2 font-medium">Time</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="px-4 py-2 font-medium">HTTP</th>
-                <th className="px-4 py-2 font-medium">Latency</th>
-                <th className="px-4 py-2 font-medium">Detail</th>
+              <tr>
+                <th>{t("detail.colTime")}</th>
+                <th>{t("dashboard.colStatus")}</th>
+                <th>{t("detail.colHttp")}</th>
+                <th>{t("dashboard.colLatency")}</th>
+                <th>{t("detail.colDetail")}</th>
               </tr>
             </thead>
             <tbody>
               {(checks.data?.items || []).map((check) => (
-                <tr key={check.id} className="border-t border-slate-800/60">
-                  <td className="px-4 py-2 text-slate-400">{formatDateTime(check.checked_at)}</td>
-                  <td className="px-4 py-2">
-                    <StatusBadge status={check.status} />
-                  </td>
-                  <td className="px-4 py-2 tabular-nums text-slate-300">
-                    {check.http_status ?? "—"}
-                  </td>
-                  <td className="px-4 py-2 tabular-nums text-slate-300">
-                    {formatMs(check.latency_ms)}
-                  </td>
-                  <td className="px-4 py-2 text-xs text-slate-500">
+                <tr key={check.id}>
+                  <td className="text-slate-400">{formatDateTime(check.checked_at, locale)}</td>
+                  <td><StatusBadge status={check.status} /></td>
+                  <td className="sw-num">{check.http_status ?? "—"}</td>
+                  <td className="sw-num">{formatMs(check.latency_ms)}</td>
+                  <td className="text-[11.5px] text-slate-500">
                     {check.error_message ||
                       [
                         check.keyword_result ? `keyword: ${check.keyword_result}` : null,
@@ -295,39 +319,40 @@ export function MonitorDetailPage() {
               ))}
             </tbody>
           </table>
-          {checks.data && checks.data.items.length === 0 && (
-            <p className="px-4 py-6 text-sm text-slate-500">
-              No checks in this window yet.
-            </p>
+          {checks.data?.items && checks.data.items.length === 0 && (
+            <p className="px-5 py-8 text-[13px] text-slate-500">{t("feedback.noChecks")}</p>
           )}
         </div>
       </section>
 
-      <section className="rounded-xl border border-slate-800 bg-slate-900">
-        <h2 className="border-b border-slate-800 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-slate-400">
-          Incidents
-        </h2>
+      <section className="sw-card overflow-hidden">
+        <div className="sw-card-head">
+          <h2 className="sw-card-title">
+            <ShieldIcon size={15} />
+            {t("detail.incidents")}
+          </h2>
+        </div>
         {incidents.isError ? (
-          <div className="px-4">
+          <div className="px-5">
             <ErrorBanner
               message={(incidents.error as Error).message}
               onRetry={() => incidents.refetch()}
             />
           </div>
         ) : !incidents.data || incidents.data.items.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-slate-500">No incidents for this monitor. 🎉</p>
+          <p className="px-5 py-8 text-[13px] text-slate-500">{t("feedback.noIncidentsForMonitor")}</p>
         ) : (
-          <ul className="divide-y divide-slate-800">
+          <ul className="divide-y divide-white/5">
             {incidents.data.items.map((incident) => (
-              <li key={incident.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm">
+              <li key={incident.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-5 py-3.5 text-[13px]">
                 <StatusBadge status={incident.is_resolved ? "up" : "down"} />
-                <span className="text-slate-300">{incident.cause || "unknown cause"}</span>
-                <span className="text-xs text-slate-500">
-                  {formatDateTime(incident.started_at)}
+                <span className="text-slate-300">{incident.cause || t("feedback.unknownCause")}</span>
+                <span className="text-[11.5px] text-slate-500">
+                  {formatDateTime(incident.started_at, locale)}
                   {incident.duration_seconds !== null
-                    ? ` · lasted ${formatDuration(incident.duration_seconds)}`
-                    : " · ongoing"}
-                  {` · ${incident.failure_count} failed check${incident.failure_count === 1 ? "" : "s"}`}
+                    ? ` · ${t("detail.lasted", { duration: formatDuration(incident.duration_seconds, locale) })}`
+                    : ` · ${t("detail.ongoing")}`}
+                  {` · ${t(incident.failure_count === 1 ? "detail.failedCheck" : "detail.failedChecks", { count: incident.failure_count })}`}
                 </span>
               </li>
             ))}
@@ -335,14 +360,16 @@ export function MonitorDetailPage() {
         )}
       </section>
 
-      <p className="text-xs text-slate-600">
-        SSL badge:{" "}
+      <p className="flex flex-wrap items-center gap-1.5 text-[11.5px] text-slate-600">
+        {t("detail.sslBadge")}{" "}
         {ssl.data
           ? `${ssl.data.ssl_status}${
-              ssl.data.expires_at ? ` — expires ${formatDateTime(ssl.data.expires_at)}` : ""
+              ssl.data.expires_at
+                ? t("detail.expires", { date: formatDateTime(ssl.data.expires_at, locale) })
+                : ""
             }`
-          : "not monitored for this target"}{" "}
-        · <Link to="/monitors" className="text-blue-500 hover:text-blue-400">back to monitors</Link>
+          : t("detail.notMonitored")}{" "}
+        · <Link to="/monitors" className="sw-link !text-[11.5px]">{t("action.backToMonitors")} <ArrowRightIcon size={12} /></Link>
       </p>
     </div>
   );

@@ -13,9 +13,21 @@ import type { Monitor, MonitorInput } from "../api/types";
 import { MonitorFormModal } from "../components/MonitorFormModal";
 import { EmptyState, ErrorBanner, Spinner } from "../components/Feedback";
 import { StatusBadge } from "../components/StatusBadge";
+import {
+  CheckIcon,
+  PauseIcon,
+  PencilIcon,
+  PlayIcon,
+  PlusIcon,
+  RadarIcon,
+  RefreshIcon,
+  TrashIcon,
+} from "../components/Icons";
+import { useI18n } from "../i18n/I18nContext";
 import { formatInterval, formatMs, formatPercent, formatRelative } from "../utils/format";
 
 export function MonitorsPage() {
+  const { t, locale } = useI18n();
   const monitors = useMonitors();
   const createMonitor = useCreateMonitor();
   const deleteMonitor = useDeleteMonitor();
@@ -49,7 +61,7 @@ export function MonitorsPage() {
   };
 
   if (monitors.isLoading) {
-    return <Spinner label="Loading monitors…" />;
+    return <Spinner label={t("feedback.loadingMonitors")} />;
   }
   if (monitors.isError) {
     return (
@@ -60,18 +72,23 @@ export function MonitorsPage() {
   const list = monitors.data || [];
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6">
+      <div className="sw-section-heading">
         <div>
-          <h1 className="text-xl font-bold">Monitors</h1>
-          <p className="text-sm text-slate-500">{list.length} configured</p>
+          <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-indigo-300/80">
+            <RadarIcon size={14} />
+            {t("nav.sectionManage")}
+          </div>
+          <h1 className="sw-page-title">{t("monitors.title")}</h1>
+          <p className="sw-page-sub">{t("monitors.subtitle", { count: list.length })}</p>
         </div>
         <button
           type="button"
           onClick={() => setCreating(true)}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
+          className="sw-btn sw-btn-primary"
         >
-          + New monitor
+          <PlusIcon size={16} />
+          {t("action.newMonitor")}
         </button>
       </div>
 
@@ -79,65 +96,58 @@ export function MonitorsPage() {
 
       {list.length === 0 ? (
         <EmptyState
-          title="No monitors yet"
-          hint="Monitors run on a schedule: HTTP status, keyword presence, JSON health checks and SSL certificate expiry."
+          title={t("feedback.noMonitors")}
+          hint={t("feedback.noMonitorsHintLong")}
           action={
             <button
               type="button"
               onClick={() => setCreating(true)}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
+              className="sw-btn sw-btn-primary"
             >
-              Create your first monitor
+              <PlusIcon size={15} />
+              {t("action.createFirst")}
             </button>
           }
         />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
-          <table className="w-full min-w-[860px] text-sm">
+        <div className="sw-card overflow-x-auto">
+          <table className="sw-table min-w-[880px]">
             <thead>
-              <tr className="border-b border-slate-800 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-2.5 font-medium">Name</th>
-                <th className="px-4 py-2.5 font-medium">Status</th>
-                <th className="px-4 py-2.5 font-medium">Latency</th>
-                <th className="px-4 py-2.5 font-medium">Uptime 24h</th>
-                <th className="px-4 py-2.5 font-medium">Interval</th>
-                <th className="px-4 py-2.5 font-medium">Last check</th>
-                <th className="px-4 py-2.5 text-right font-medium">Actions</th>
+              <tr>
+                <th>{t("monitors.colName")}</th>
+                <th>{t("dashboard.colStatus")}</th>
+                <th>{t("dashboard.colLatency")}</th>
+                <th>{t("dashboard.colUptime24h")}</th>
+                <th>{t("monitors.colInterval")}</th>
+                <th>{t("dashboard.colLastCheck")}</th>
+                <th className="!text-right">{t("monitors.colActions")}</th>
               </tr>
             </thead>
             <tbody>
               {list.map((monitor) => {
                 const status = !monitor.enabled ? "paused" : (monitor.last_status ?? "pending");
                 return (
-                  <tr key={monitor.id} className="border-t border-slate-800/60 hover:bg-slate-800/30">
-                    <td className="max-w-[240px] px-4 py-3">
+                  <tr key={monitor.id}>
+                    <td className="max-w-[240px]">
                       <Link
                         to={`/monitors/${monitor.id}`}
-                        className="font-medium text-slate-100 hover:text-blue-400"
+                        className="font-semibold text-slate-100 transition hover:text-indigo-300"
                       >
                         {monitor.name}
                       </Link>
-                      <div className="truncate text-xs text-slate-500">
+                      <div className="mt-0.5 truncate text-[11.5px] text-slate-500">
                         {monitor.target_url}
                       </div>
                     </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={status} />
+                    <td><StatusBadge status={status} /></td>
+                    <td className="sw-num">{formatMs(monitor.last_latency_ms)}</td>
+                    <td className="sw-num">{formatPercent(monitor.uptime_24h)}</td>
+                    <td className="text-slate-400">{formatInterval(monitor.interval_seconds, locale)}</td>
+                    <td className="text-[11.5px] text-slate-500">
+                      {formatRelative(monitor.last_checked_at, locale)}
                     </td>
-                    <td className="px-4 py-3 tabular-nums text-slate-300">
-                      {formatMs(monitor.last_latency_ms)}
-                    </td>
-                    <td className="px-4 py-3 tabular-nums text-slate-300">
-                      {formatPercent(monitor.uptime_24h)}
-                    </td>
-                    <td className="px-4 py-3 text-slate-400">
-                      {formatInterval(monitor.interval_seconds)}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-500">
-                      {formatRelative(monitor.last_checked_at)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap justify-end gap-1.5 text-xs">
+                    <td>
+                      <div className="flex flex-wrap justify-end gap-1.5">
                         <button
                           type="button"
                           disabled={checkNow.isPending}
@@ -146,9 +156,10 @@ export function MonitorsPage() {
                               onError: (error) => setActionError(error.message),
                             })
                           }
-                          className="rounded border border-slate-700 px-2 py-1 font-medium text-slate-300 transition hover:bg-slate-800 disabled:opacity-50"
+                          className="sw-btn sw-btn-ghost sw-btn-sm"
                         >
-                          Check now
+                          <RefreshIcon size={13} />
+                          {t("action.checkNow")}
                         </button>
                         <button
                           type="button"
@@ -158,27 +169,28 @@ export function MonitorsPage() {
                               { onError: (error) => setActionError(error.message) },
                             )
                           }
-                          className="rounded border border-slate-700 px-2 py-1 font-medium text-slate-300 transition hover:bg-slate-800"
+                          className="sw-btn sw-btn-ghost sw-btn-sm"
                         >
-                          {monitor.enabled ? "Pause" : "Resume"}
+                          {monitor.enabled ? <PauseIcon size={13} /> : <PlayIcon size={13} />}
+                          {monitor.enabled ? t("action.pause") : t("action.resume")}
                         </button>
                         <button
                           type="button"
                           onClick={() => setEditing(monitor)}
-                          className="rounded border border-slate-700 px-2 py-1 font-medium text-slate-300 transition hover:bg-slate-800"
+                          className="sw-btn sw-btn-ghost sw-btn-sm"
                         >
-                          Edit
+                          <PencilIcon size={13} />
+                          {t("action.edit")}
                         </button>
                         <button
                           type="button"
                           onClick={() => handleDelete(monitor)}
-                          className={`rounded border px-2 py-1 font-medium transition ${
-                            deletingId === monitor.id
-                              ? "border-red-500 bg-red-600 text-white"
-                              : "border-slate-700 text-slate-300 hover:bg-slate-800"
+                          className={`sw-btn sw-btn-sm ${
+                            deletingId === monitor.id ? "sw-btn-danger" : "sw-btn-ghost"
                           }`}
                         >
-                          {deletingId === monitor.id ? "Confirm delete?" : "Delete"}
+                          <TrashIcon size={13} />
+                          {deletingId === monitor.id ? t("action.confirmDelete") : t("action.delete")}
                         </button>
                       </div>
                     </td>
@@ -189,6 +201,11 @@ export function MonitorsPage() {
           </table>
         </div>
       )}
+
+      <div className="flex items-center gap-2 text-[11.5px] text-slate-600">
+        <CheckIcon size={13} className="text-emerald-500/70" />
+        {t("app.updated")}
+      </div>
 
       {creating && (
         <MonitorFormModal
@@ -202,7 +219,13 @@ export function MonitorsPage() {
         />
       )}
 
-      {editing && <EditWrapper monitor={editing} onDone={() => setEditing(null)} onError={(message) => setActionError(message)} />}
+      {editing && (
+        <EditWrapper
+          monitor={editing}
+          onDone={() => setEditing(null)}
+          onError={(message) => setActionError(message)}
+        />
+      )}
     </div>
   );
 }

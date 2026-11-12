@@ -10,6 +10,7 @@ import {
 import { Spinner } from "./components/Feedback";
 import { Layout } from "./components/Layout";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
+import { I18nProvider, useI18n } from "./i18n/I18nContext";
 import { DashboardPage } from "./pages/DashboardPage";
 import { IncidentsPage } from "./pages/IncidentsPage";
 import { LoginPage, RegisterPage } from "./pages/AuthPages";
@@ -32,14 +33,24 @@ if (import.meta.env.DEV) {
   (window as unknown as { __queryClient: QueryClient }).__queryClient = queryClient;
 }
 
+function BootScreen() {
+  const { t } = useI18n();
+  return (
+    <div className="sw-shell flex min-h-screen items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <div className="sw-brand-mark !h-12 !w-12">
+          <span className="text-lg font-bold">S</span>
+        </div>
+        <Spinner label={t("feedback.signingIn")} />
+      </div>
+    </div>
+  );
+}
+
 function ProtectedRoutes() {
   const { user, loading } = useAuth();
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950">
-        <Spinner label="Signing you in…" />
-      </div>
-    );
+    return <BootScreen />;
   }
   if (!user) {
     return <Navigate to="/login" replace />;
@@ -50,11 +61,7 @@ function ProtectedRoutes() {
 function PublicOnlyRoutes() {
   const { user, loading } = useAuth();
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950">
-        <Spinner label="Loading…" />
-      </div>
-    );
+    return <BootScreen />;
   }
   if (user) {
     return <Navigate to="/" replace />;
@@ -64,25 +71,27 @@ function PublicOnlyRoutes() {
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route element={<PublicOnlyRoutes />}>
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
-            </Route>
-            <Route element={<ProtectedRoutes />}>
-              <Route path="/" element={<DashboardPage />} />
-              <Route path="/monitors" element={<MonitorsPage />} />
-              <Route path="/monitors/:id" element={<MonitorDetailPage />} />
-              <Route path="/incidents" element={<IncidentsPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Route>
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
-    </QueryClientProvider>
+    <I18nProvider>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route element={<PublicOnlyRoutes />}>
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/register" element={<RegisterPage />} />
+              </Route>
+              <Route element={<ProtectedRoutes />}>
+                <Route path="/" element={<DashboardPage />} />
+                <Route path="/monitors" element={<MonitorsPage />} />
+                <Route path="/monitors/:id" element={<MonitorDetailPage />} />
+                <Route path="/incidents" element={<IncidentsPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+              </Route>
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </BrowserRouter>
+        </AuthProvider>
+      </QueryClientProvider>
+    </I18nProvider>
   );
 }
