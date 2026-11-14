@@ -21,6 +21,7 @@ from app.models.monitor import (
 from app.models.user import User
 from app.monitoring.url_guard import validate_public_http_url
 from app.schemas.monitor import MonitorCreate, MonitorResponse, MonitorUpdate
+from app.services.incident_service import resolve_open_incidents
 
 
 def not_found() -> ApiError:
@@ -115,6 +116,12 @@ def update_monitor(
         monitor.ssl_last_checked_at = None
         monitor.ssl_alert_state = SSL_ALERT_NONE
 
+    # PUT {"enabled": false} bypasses set_enabled(); close open incidents here
+    # too, otherwise a DOWN monitor paused through the generic update endpoint
+    # keeps a permanently open incident.
+    if data.get("enabled") is False and monitor.enabled:
+        resolve_open_incidents(db, monitor.id)
+
     for field, value in data.items():
         setattr(monitor, field, value)
 
@@ -129,6 +136,11 @@ def set_enabled(db: Session, monitor: Monitor, enabled: bool) -> Monitor:
     monitor.enabled = enabled
     if enabled:
         monitor.next_check_at = utcnow()
+    else:
+        # A disabled monitor is never checked again. Close its incident now so
+        # the dashboard does not count it as active forever and a later
+        # re-enable starts a fresh incident instead of inheriting the pause.
+        resolve_open_incidents(db, monitor.id)
     db.commit()
     db.refresh(monitor)
     return monitor

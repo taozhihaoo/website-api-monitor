@@ -91,15 +91,22 @@ class EmailChannel:
     def enabled(self) -> bool:
         return self.settings.smtp_enabled
 
+    @staticmethod
+    def _header(value: str | None) -> str:
+        # EmailMessage raises ValueError (not SMTPException) on CRLF in a
+        # header. A monitor name containing a newline would otherwise escape
+        # the old except clause, lose the alert AND its audit row entirely.
+        return (value or "").replace("\r", " ").replace("\n", " ")
+
     def send(self, subject: str, body: str) -> tuple[str, str | None]:
         if not self.enabled:
             return STATUS_SKIPPED, "email notifications are not configured"
-        message = EmailMessage()
-        message["From"] = self.settings.smtp_from
-        message["To"] = self.settings.smtp_to
-        message["Subject"] = subject
-        message.set_content(body)
         try:
+            message = EmailMessage()
+            message["From"] = self._header(self.settings.smtp_from)
+            message["To"] = self._header(self.settings.smtp_to)
+            message["Subject"] = self._header(subject)
+            message.set_content(body)
             with smtplib.SMTP(
                 self.settings.smtp_host, self.settings.smtp_port, timeout=15
             ) as smtp:
@@ -108,8 +115,8 @@ class EmailChannel:
                 if self.settings.smtp_username and self.settings.smtp_password:
                     smtp.login(self.settings.smtp_username, self.settings.smtp_password)
                 smtp.send_message(message)
-        except (smtplib.SMTPException, OSError) as exc:
-            return STATUS_FAILED, str(exc)[:300]
+        except Exception as exc:  # noqa: BLE001 — delivery must never crash a check
+            return STATUS_FAILED, f"{type(exc).__name__}: {exc}"[:300]
         return STATUS_SENT, None
 
 

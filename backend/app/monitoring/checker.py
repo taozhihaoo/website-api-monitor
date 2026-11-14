@@ -187,6 +187,12 @@ class HTTPChecker:
         except UrlValidationError as exc:
             outcome.latency_ms = int((time.perf_counter() - started) * 1000)
             return _down(outcome, ERROR_TYPE_CONNECTION, str(exc.message))
+        except (httpx.InvalidURL, UnicodeError) as exc:
+            # httpx.InvalidURL is not a TransportError, so it escaped the retry
+            # chain and was reported as an internal_error by the engine. Treat
+            # a malformed stored URL as a clean connection-level DOWN instead.
+            outcome.latency_ms = int((time.perf_counter() - started) * 1000)
+            return _down(outcome, ERROR_TYPE_CONNECTION, f"Invalid target URL: {exc}")
 
         outcome.latency_ms = int((time.perf_counter() - started) * 1000)
         outcome.http_status = response.status_code

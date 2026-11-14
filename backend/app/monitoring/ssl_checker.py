@@ -5,6 +5,7 @@ the trust store — an expired/self-signed certificate must still be readable so
 we can report on it).
 """
 
+import math
 import socket
 import ssl
 from dataclasses import dataclass
@@ -37,8 +38,14 @@ def days_until(expires_at: datetime, now: datetime | None = None) -> int:
     now = now or datetime.now(UTC)
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=UTC)
-    delta = expires_at - now
-    return int(delta.total_seconds() // 86400)
+    seconds = (expires_at - now).total_seconds()
+    # Formatting/serialisation makes a "now + 30 days" certificate land at
+    # 29.9999 days; a floor then reports 29 and triggers a 30-day warning one
+    # day early. Round *up* remaining days, but keep negative values negative
+    # so a certificate that expired an hour ago is still reported as expired.
+    if seconds < 0:
+        return int(seconds // 86400)
+    return math.ceil(seconds / 86400)
 
 
 class SSLChecker:

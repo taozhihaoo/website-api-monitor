@@ -100,6 +100,11 @@ class Scheduler:
             self._thread = None
         self._pool.shutdown(wait=True, cancel_futures=True)
         self._pool_shutdown = True
+        # Cancelled futures never run _run_one(), so their ids would otherwise
+        # stay in _running forever and be excluded from every future scan after
+        # a start()/stop()/start() cycle on the same instance.
+        with self._running_lock:
+            self._running.clear()
         logger.info("Scheduler stopped")
 
     # -- loop -------------------------------------------------------------------
@@ -119,8 +124,14 @@ class Scheduler:
         now = utcnow()
         dispatched = 0
         with self.session_factory() as db:
-            exclude = set(self._running)
-            for monitor_id in due_monitor_ids(db, now, exclude=exclude):
+            with self._running_lock:
+                exclude = set(self._running)
+            # A ThreadPoolExecutor bounds *workers*, not its queue. Without this
+            # cap, a restart with N overdue monitors enqueues N futures at once
+            # (unbounded memory/latency). Undispatched monitors stay due and are
+            # picked up on the next scan.
+            capacity = max(0, self._max_workers - len(exclude))
+            for monitor_id in due_monitor_ids(db, now, exclude=exclude)[:capacity]:
                 monitor = db.get(Monitor, monitor_id)
                 if monitor is None or not monitor.enabled:
                     continue

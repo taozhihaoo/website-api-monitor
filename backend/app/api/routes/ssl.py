@@ -9,6 +9,7 @@ from app.api.deps import get_current_user
 from app.api.errors import ApiError
 from app.database import get_db
 from app.models.base import utcnow
+from app.models.monitor import MONITOR_TYPE_SSL
 from app.models.user import User
 from app.monitoring.checker import classify_ssl_status
 from app.monitoring.ssl_checker import SSLChecker, SSLCheckError
@@ -38,6 +39,16 @@ def ssl_info(
         )
 
     if refresh:
+        # Never refresh a monitor whose SSL checking is off: it would write a
+        # frozen certificate snapshot that scheduled checks never update (they
+        # skip the sidecar), and the alert state machine would never see the
+        # renewal/expiry transition. A caller must opt in first.
+        if not (monitor.ssl_check_enabled or monitor.type == MONITOR_TYPE_SSL):
+            raise ApiError(
+                400,
+                "ssl_check_disabled",
+                "SSL checking is disabled for this monitor",
+            )
         # refresh=true opens a socket to a user-controlled target — apply the
         # same SSRF guard as the checker, at request time.
         try:

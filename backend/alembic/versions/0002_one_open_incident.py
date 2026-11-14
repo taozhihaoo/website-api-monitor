@@ -10,6 +10,7 @@ the SELECT and INSERT) creating two open incidents for one monitor — one of
 which could never be closed by the recovery path.
 """
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 import sqlalchemy as sa
 
@@ -26,12 +27,22 @@ def upgrade() -> None:
     # Existing deployments may already contain duplicate open incidents.
     # Keep the newest one per monitor and close the stale ones before the
     # unique index is created (otherwise the migration would fail).
+    #
+    # Use an application-generated UTC instant (not CURRENT_TIMESTAMP, which
+    # follows the DB session timezone) and fill in duration_seconds — otherwise
+    # the repaired rows show "—" as duration forever.
+    now = datetime.now(UTC).replace(tzinfo=None)
+    if bind.dialect.name == "postgresql":
+        duration = "GREATEST(0, EXTRACT(EPOCH FROM (:now - started_at))::int)"
+    else:
+        duration = "MAX(0, CAST((julianday(:now) - julianday(started_at)) * 86400 AS INTEGER))"
     bind.execute(
         sa.text(
-            """
+            f"""
             UPDATE incidents
                SET is_resolved = TRUE,
-                   resolved_at = CURRENT_TIMESTAMP
+                   resolved_at = :now,
+                   duration_seconds = {duration}
              WHERE is_resolved = FALSE
                AND id NOT IN (
                    SELECT MAX(id)
@@ -40,7 +51,8 @@ def upgrade() -> None:
                     GROUP BY monitor_id
                )
             """
-        )
+        ),
+        {"now": now},
     )
     op.create_index(
         "uq_incidents_one_open_per_monitor",

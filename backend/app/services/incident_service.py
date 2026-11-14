@@ -9,6 +9,8 @@ Rules:
 One open incident per monitor at any time.
 """
 
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -47,6 +49,29 @@ def active_incident(db: Session, monitor_id: int) -> Incident | None:
     return incidents[0] if incidents else None
 
 
+def resolve_open_incidents(
+    db: Session, monitor_id: int, at: datetime | None = None
+) -> list[Incident]:
+    """Close every open incident for a monitor without sending a notification.
+
+    Used when a monitor is paused or deleted from scheduling: a paused monitor
+    is never checked again, so its incident would otherwise stay open forever
+    (inflating the dashboard's active count and later counting the whole pause
+    as downtime). Returns the incidents that were closed.
+    """
+    incidents = open_incidents(db, monitor_id)
+    if not incidents:
+        return []
+    now = at or utcnow()
+    for incident in incidents:
+        incident.is_resolved = True
+        incident.resolved_at = now
+        incident.duration_seconds = max(
+            0, int((now - incident.started_at).total_seconds())
+        )
+    return incidents
+
+
 def record_result(
     db: Session, monitor: Monitor, check: MonitorCheck
 ) -> tuple[Incident | None, bool, bool]:
@@ -72,14 +97,8 @@ def record_result(
         incident.failure_count += 1
         return incident, False, False
 
-    incidents = open_incidents(db, monitor.id)
+    incidents = resolve_open_incidents(db, monitor.id, at=now)
     if not incidents:
         return None, False, False
-    for incident in incidents:
-        incident.is_resolved = True
-        incident.resolved_at = now
-        incident.duration_seconds = max(
-            0, int((incident.resolved_at - incident.started_at).total_seconds())
-        )
     # Report the newest incident for the recovery notification.
     return incidents[0], False, True

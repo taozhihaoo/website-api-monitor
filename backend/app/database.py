@@ -12,11 +12,12 @@ def _engine_kwargs(url: str) -> dict:
 
 
 _settings = get_settings()
+_database_url = _settings.resolved_database_url
 engine = create_engine(
-    _settings.database_url,
+    _database_url,
     echo=_settings.db_echo,
     future=True,
-    **_engine_kwargs(_settings.database_url),
+    **_engine_kwargs(_database_url),
 )
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
 

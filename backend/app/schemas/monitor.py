@@ -27,6 +27,9 @@ class MonitorCreate(BaseModel):
 
     @model_validator(mode="after")
     def _validate_type_specific(self) -> "MonitorCreate":
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("name must not be blank")
         if self.type not in MONITOR_TYPES:
             raise ValueError(f"type must be one of: {', '.join(MONITOR_TYPES)}")
         if self.keyword_mode not in KEYWORD_MODES:
@@ -72,6 +75,17 @@ class MonitorUpdate(BaseModel):
             raise ValueError(f"type must be one of: {', '.join(MONITOR_TYPES)}")
         if self.keyword_mode is not None and self.keyword_mode not in KEYWORD_MODES:
             raise ValueError(f"keyword_mode must be one of: {', '.join(KEYWORD_MODES)}")
+        # Mirror MonitorCreate's normalisation. Without this, PUT {"keyword": "  "}
+        # on an http/api_json monitor enables a keyword rule that can never
+        # match, turning a healthy monitor permanently DOWN.
+        if self.name is not None:
+            self.name = self.name.strip()
+            if not self.name:
+                raise ValueError("name must not be blank")
+        for field in ("keyword", "json_path", "json_expected_value"):
+            value = getattr(self, field)
+            if value is not None:
+                setattr(self, field, value.strip() or None)
         return self
 
 

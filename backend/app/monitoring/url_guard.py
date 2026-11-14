@@ -74,6 +74,11 @@ def validate_public_http_url(
     if not url or not url.strip():
         raise UrlValidationError("URL is required")
     url = url.strip()
+    # urllib.parse.urlsplit silently strips TAB/CR/LF while httpx rejects them
+    # with InvalidURL. Without this check such a URL is accepted at creation
+    # and then fails every check as an "internal_error" DOWN.
+    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in url):
+        raise UrlValidationError("URL contains control characters")
     if len(url) > MAX_URL_LENGTH:
         raise UrlValidationError("URL is too long")
 

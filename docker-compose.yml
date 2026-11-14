@@ -19,7 +19,13 @@ services:
     environment: &backend_env
       APP_ENV: ${APP_ENV:-production}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-sitewatch}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-sitewatch}
+      # Pass the connection *parts*, not a pre-built URL: the backend builds the
+      # SQLAlchemy URL itself so passwords with @ : / # are encoded correctly.
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-sitewatch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-sitewatch}
       SCHEDULER_ENABLED: "true"
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
       # Optional notifications (leave SMTP_* empty to disable email alerts):

@@ -1,4 +1,4 @@
-"""Alembic environment: reads DATABASE_URL from app config, not from this file."""
+"""Alembic environment: reads the resolved database URL from app config."""
 
 from logging.config import fileConfig
 
@@ -18,7 +18,7 @@ target_metadata = Base.metadata
 
 
 def _database_url() -> str:
-    return get_settings().database_url
+    return get_settings().resolved_database_url
 
 
 def run_migrations_offline() -> None:

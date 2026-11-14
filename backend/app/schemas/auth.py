@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
@@ -17,7 +19,7 @@ class UserResponse(BaseModel):
     id: int
     email: str
     webhook_url: str | None = None
-    created_at: object
+    created_at: datetime
     # Lets the Settings page report the *actual* server-side SMTP state
     # instead of claiming email alerts are always configured.
     smtp_enabled: bool = False

@@ -15,5 +15,7 @@ COPY --from=builder /build/dist /usr/share/nginx/html
 
 EXPOSE 80
 
+# /health is proxied to the backend, so this also detects a dead API (a plain
+# GET / would stay "healthy" with nginx alone while the backend was down).
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD wget -qO- http://127.0.0.1/ >/dev/null 2>&1 || exit 1
+    CMD wget -qO- http://127.0.0.1/health >/dev/null 2>&1 || exit 1
