@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 import { useTestWebhook, useUpdateWebhook } from "../api/hooks";
@@ -16,9 +16,14 @@ export function SettingsPage() {
   const [webhookUrl, setWebhookUrl] = useState(user?.webhook_url ?? "");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // refreshUser() is fire-and-forget; without this guard a late /auth/me
+  // response overwrites whatever the user started typing after clicking Save.
+  const dirty = useRef(false);
 
   useEffect(() => {
-    setWebhookUrl(user?.webhook_url ?? "");
+    if (!dirty.current) {
+      setWebhookUrl(user?.webhook_url ?? "");
+    }
   }, [user?.webhook_url]);
 
   const handleSave = (event: FormEvent) => {
@@ -33,6 +38,7 @@ export function SettingsPage() {
     updateWebhook.mutate(trimmed || null, {
       onSuccess: () => {
         setSaved(true);
+        dirty.current = false;
         // Without this the header/Settings kept the pre-save user object and
         // "Send test" stayed disabled until a full page reload.
         void refreshUser();
@@ -73,11 +79,11 @@ export function SettingsPage() {
         </h2>
         <dl className="grid grid-cols-1 gap-3 text-[13px] sm:grid-cols-2">
           <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
-            <dt className="text-[11px] uppercase tracking-wider text-slate-500">{t("settings.email")}</dt>
+            <dt className="text-[11px] uppercase tracking-wider text-slate-400">{t("settings.email")}</dt>
             <dd className="mt-1 truncate font-medium text-slate-100">{user?.email}</dd>
           </div>
           <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
-            <dt className="text-[11px] uppercase tracking-wider text-slate-500">{t("settings.memberSince")}</dt>
+            <dt className="text-[11px] uppercase tracking-wider text-slate-400">{t("settings.memberSince")}</dt>
             <dd className="mt-1 font-medium text-slate-100">{formatDateTime(user?.created_at, locale)}</dd>
           </div>
         </dl>
@@ -91,21 +97,25 @@ export function SettingsPage() {
         <p className="mb-5 max-w-2xl text-[12.5px] leading-relaxed text-slate-400">
           {t("settings.webhookDesc")}
         </p>
-        {error && <ErrorBanner message={error} onRetry={() => setError(null)} />}
+        {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
         {saved && (
           <div role="status" className="sw-success mb-4 flex items-center gap-2">
             <CheckIcon size={15} />
             {t("settings.webhookSaved")}
           </div>
         )}
-        <form onSubmit={handleSave} className="space-y-3">
+        <form onSubmit={handleSave} noValidate className="space-y-3">
           <label htmlFor="webhook" className="sw-label">{t("settings.webhookUrl")}</label>
           <input
             id="webhook"
             type="url"
             className="sw-input"
             value={webhookUrl}
-            onChange={(e) => setWebhookUrl(e.target.value)}
+            onChange={(e) => {
+              dirty.current = true;
+              setSaved(false);
+              setWebhookUrl(e.target.value);
+            }}
             placeholder={t("settings.webhookPlaceholder")}
           />
           <div className="flex flex-wrap gap-2 pt-1">

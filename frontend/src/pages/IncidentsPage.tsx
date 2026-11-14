@@ -11,7 +11,9 @@ import { formatDateTime, formatDuration } from "../utils/format";
 export function IncidentsPage() {
   const { t, locale } = useI18n();
   const [showResolved, setShowResolved] = useState(true);
-  const incidents = useIncidents(showResolved ? undefined : false);
+  // Backend: active=true -> is_resolved=False (ongoing only), active=false ->
+  // resolved only. Hiding resolved incidents therefore means active=true.
+  const incidents = useIncidents(showResolved ? undefined : true);
 
   if (incidents.isLoading) {
     return <Spinner label={t("feedback.loadingIncidents")} />;
@@ -77,7 +79,7 @@ export function IncidentsPage() {
                       to={`/monitors/${incident.monitor_id}`}
                       className="font-semibold text-slate-100 transition hover:text-indigo-300"
                     >
-                      {incident.monitor_name || `Monitor #${incident.monitor_id}`}
+                      {incident.monitor_name || t("common.monitorFallback", { id: incident.monitor_id })}
                     </Link>
                   </td>
                   <td className="max-w-[280px] truncate text-slate-400">

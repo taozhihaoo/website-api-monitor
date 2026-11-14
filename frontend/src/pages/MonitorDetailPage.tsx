@@ -51,6 +51,21 @@ const WINDOW_LABEL_KEY: Record<string, MessageKey> = Object.fromEntries(
   WINDOWS.map((w) => [w.value, w.labelKey]),
 );
 
+const TYPE_LABEL_KEY: Record<string, MessageKey> = {
+  http: "detail.typeHttp",
+  keyword: "detail.typeKeyword",
+  api_json: "detail.typeJson",
+  ssl: "detail.typeSsl",
+};
+
+const SSL_STATUS_KEY: Record<string, MessageKey> = {
+  valid: "status.sslOk",
+  expiring_soon: "status.sslExpiring",
+  expired: "status.sslExpired",
+  unknown: "status.sslUnknown",
+  not_applicable: "status.sslNa",
+};
+
 export function MonitorDetailPage() {
   const { t, locale } = useI18n();
   const { id } = useParams();
@@ -80,7 +95,9 @@ export function MonitorDetailPage() {
     );
   }
   if (!monitor.data) {
-    return <ErrorBanner message="Monitor not found." />;
+    return (
+      <ErrorBanner message={t("detail.notFound")} onRetry={() => monitor.refetch()} />
+    );
   }
 
   const m = monitor.data;
@@ -118,9 +135,9 @@ export function MonitorDetailPage() {
             {m.target_url}
             <ExternalIcon size={13} className="shrink-0" />
           </a>
-          <p className="mt-2 text-[11.5px] text-slate-500">
+          <p className="mt-2 text-[11.5px] text-slate-400">
             {t("detail.meta", {
-              type: m.type,
+              type: t(TYPE_LABEL_KEY[m.type] ?? "detail.typeHttp"),
               interval: formatInterval(m.interval_seconds, locale),
               timeout: m.timeout_seconds,
               last: formatRelative(m.last_checked_at, locale),
@@ -163,7 +180,7 @@ export function MonitorDetailPage() {
         </div>
       </div>
 
-      {actionError && <ErrorBanner message={actionError} onRetry={() => setActionError(null)} />}
+      {actionError && <ErrorBanner message={actionError} onDismiss={() => setActionError(null)} />}
 
       <div className="sw-stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard label={t("detail.currentLatency")} value={formatMs(m.last_latency_ms)} tone="accent" icon={<SignalIcon size={13} />} />
@@ -186,9 +203,9 @@ export function MonitorDetailPage() {
           label={t("detail.ssl")}
           value={
             ssl.data && ssl.data.days_remaining !== null
-              ? `${ssl.data.days_remaining}d`
+              ? t("detail.sslDays", { count: ssl.data.days_remaining })
               : ssl.data?.ssl_status === "not_applicable"
-                ? "n/a"
+                ? t("detail.sslNa")
                 : "—"
           }
           icon={<ShieldIcon size={13} />}
@@ -215,6 +232,10 @@ export function MonitorDetailPage() {
               message={(checks.error as Error).message}
               onRetry={() => checks.refetch()}
             />
+          ) : checks.isLoading ? (
+            <div className="flex h-52 items-center justify-center text-[13px] text-slate-400">
+              {t("feedback.loading")}
+            </div>
           ) : (
             <LatencyChart checks={checks.data?.items} />
           )}
@@ -225,21 +246,25 @@ export function MonitorDetailPage() {
             <RadarIcon size={15} />
             {t("detail.recentChecks")}
           </h2>
-          <UptimeStrip checks={checks.data?.items} max={40} />
+          <UptimeStrip checks={checks.data?.items} max={30} />
           <dl className="mt-5 space-y-2 text-[12.5px]">
             <div className="flex justify-between gap-3">
-              <dt className="text-slate-500">{t("detail.expectedStatus")}</dt>
+              <dt className="text-slate-400">{t("detail.expectedStatus")}</dt>
               <dd className="tabular-nums text-slate-200">{t("format.httpPrefix", { code: m.expected_status })}</dd>
             </div>
             {m.keyword && (
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-500">{t("detail.keyword", { mode: m.keyword_mode })}</dt>
+                <dt className="text-slate-400">
+                  {t("detail.keyword", {
+                    mode: t(m.keyword_mode === "not_contains" ? "detail.ruleNotContains" : "detail.ruleContains"),
+                  })}
+                </dt>
                 <dd className="truncate text-slate-200">“{m.keyword}”</dd>
               </div>
             )}
             {m.json_path && (
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-500">{t("detail.jsonPath")}</dt>
+                <dt className="text-slate-400">{t("detail.jsonPath")}</dt>
                 <dd className="truncate text-slate-200">
                   {m.json_path}
                   {m.json_expected_value ? ` = ${m.json_expected_value}` : ""}
@@ -247,11 +272,11 @@ export function MonitorDetailPage() {
               </div>
             )}
             <div className="flex justify-between gap-3">
-              <dt className="text-slate-500">{t("detail.nextCheck")}</dt>
+              <dt className="text-slate-400">{t("detail.nextCheck")}</dt>
               <dd className="text-slate-200">{formatRelative(m.next_check_at, locale)}</dd>
             </div>
             <div className="flex justify-between gap-3">
-              <dt className="text-slate-500">{t("detail.created")}</dt>
+              <dt className="text-slate-400">{t("detail.created")}</dt>
               <dd className="text-slate-200">{formatDateTime(m.created_at, locale)}</dd>
             </div>
           </dl>
@@ -264,12 +289,13 @@ export function MonitorDetailPage() {
             <ClockIcon size={15} />
             {t("detail.checkHistory")}
           </h2>
-          <div className="sw-lang !p-[2px]">
+          <div className="sw-lang !p-[2px]" role="group" aria-label={t("detail.windowGroup")}>
             {WINDOWS.map((w) => (
               <button
                 key={w.value}
                 type="button"
                 onClick={() => setWindow_(w.value)}
+                aria-pressed={window_ === w.value}
                 className={window_ === w.value ? "active" : ""}
               >
                 {t(w.labelKey)}
@@ -278,7 +304,7 @@ export function MonitorDetailPage() {
           </div>
         </div>
         {uptime.data && (
-          <p className="px-5 pt-4 text-[11.5px] text-slate-500">
+          <p className="px-5 pt-4 text-[11.5px] text-slate-400">
             {t("detail.uptimeSummary", { window: t(WINDOW_LABEL_KEY[window_] ?? "detail.window24h") })}{" "}
             <span className="font-semibold text-slate-200">
               {formatPercent(uptime.data.uptime_percentage)}
@@ -304,12 +330,20 @@ export function MonitorDetailPage() {
                   <td><StatusBadge status={check.status} /></td>
                   <td className="sw-num">{check.http_status ?? "—"}</td>
                   <td className="sw-num">{formatMs(check.latency_ms)}</td>
-                  <td className="text-[11.5px] text-slate-500">
+                  <td className="text-[11.5px] text-slate-400">
                     {check.error_message ||
                       [
-                        check.keyword_result ? `keyword: ${check.keyword_result}` : null,
-                        check.json_result ? `json: ${check.json_result}` : null,
-                        check.ssl_status !== "not_applicable" ? `ssl: ${check.ssl_status}` : null,
+                        check.keyword_result
+                          ? t("detail.checkKeyword", { value: check.keyword_result })
+                          : null,
+                        check.json_result
+                          ? t("detail.checkJson", { value: check.json_result })
+                          : null,
+                        check.ssl_status !== "not_applicable"
+                          ? t("detail.checkSsl", {
+                              value: t(SSL_STATUS_KEY[check.ssl_status] ?? "status.sslUnknown"),
+                            })
+                          : null,
                       ]
                         .filter(Boolean)
                         .join(" · ") ||
@@ -319,8 +353,14 @@ export function MonitorDetailPage() {
               ))}
             </tbody>
           </table>
-          {checks.data?.items && checks.data.items.length === 0 && (
-            <p className="px-5 py-8 text-[13px] text-slate-500">{t("feedback.noChecks")}</p>
+          {checks.isLoading && (
+            <p className="px-5 py-8 text-[13px] text-slate-400">{t("feedback.loading")}</p>
+          )}
+          {checks.isError && (
+            <ErrorBanner message={(checks.error as Error).message} onRetry={() => checks.refetch()} />
+          )}
+          {checks.data?.items && checks.data.items.length === 0 && !checks.isError && (
+            <p className="px-5 py-8 text-[13px] text-slate-400">{t("feedback.noChecks")}</p>
           )}
         </div>
       </section>
@@ -339,15 +379,17 @@ export function MonitorDetailPage() {
               onRetry={() => incidents.refetch()}
             />
           </div>
+        ) : incidents.isLoading ? (
+          <p className="px-5 py-8 text-[13px] text-slate-400">{t("feedback.loadingIncidents")}</p>
         ) : !incidents.data || incidents.data.items.length === 0 ? (
-          <p className="px-5 py-8 text-[13px] text-slate-500">{t("feedback.noIncidentsForMonitor")}</p>
+          <p className="px-5 py-8 text-[13px] text-slate-400">{t("feedback.noIncidentsForMonitor")}</p>
         ) : (
           <ul className="divide-y divide-white/5">
             {incidents.data.items.map((incident) => (
               <li key={incident.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-5 py-3.5 text-[13px]">
                 <StatusBadge status={incident.is_resolved ? "up" : "down"} />
                 <span className="text-slate-300">{incident.cause || t("feedback.unknownCause")}</span>
-                <span className="text-[11.5px] text-slate-500">
+                <span className="text-[11.5px] text-slate-400">
                   {formatDateTime(incident.started_at, locale)}
                   {incident.duration_seconds !== null
                     ? ` · ${t("detail.lasted", { duration: formatDuration(incident.duration_seconds, locale) })}`
@@ -360,10 +402,10 @@ export function MonitorDetailPage() {
         )}
       </section>
 
-      <p className="flex flex-wrap items-center gap-1.5 text-[11.5px] text-slate-600">
+      <p className="flex flex-wrap items-center gap-1.5 text-[11.5px] text-slate-400">
         {t("detail.sslBadge")}{" "}
         {ssl.data
-          ? `${ssl.data.ssl_status}${
+          ? `${t(SSL_STATUS_KEY[ssl.data.ssl_status] ?? "status.sslUnknown")}${
               ssl.data.expires_at
                 ? t("detail.expires", { date: formatDateTime(ssl.data.expires_at, locale) })
                 : ""

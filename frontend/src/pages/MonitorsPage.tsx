@@ -92,7 +92,7 @@ export function MonitorsPage() {
         </button>
       </div>
 
-      {actionError && <ErrorBanner message={actionError} onRetry={() => setActionError(null)} />}
+      {actionError && <ErrorBanner message={actionError} onDismiss={() => setActionError(null)} />}
 
       {list.length === 0 ? (
         <EmptyState
@@ -135,7 +135,7 @@ export function MonitorsPage() {
                       >
                         {monitor.name}
                       </Link>
-                      <div className="mt-0.5 truncate text-[11.5px] text-slate-500">
+                      <div className="mt-0.5 truncate text-[11.5px] text-slate-400">
                         {monitor.target_url}
                       </div>
                     </td>
@@ -143,14 +143,14 @@ export function MonitorsPage() {
                     <td className="sw-num">{formatMs(monitor.last_latency_ms)}</td>
                     <td className="sw-num">{formatPercent(monitor.uptime_24h)}</td>
                     <td className="text-slate-400">{formatInterval(monitor.interval_seconds, locale)}</td>
-                    <td className="text-[11.5px] text-slate-500">
+                    <td className="text-[11.5px] text-slate-400">
                       {formatRelative(monitor.last_checked_at, locale)}
                     </td>
                     <td>
                       <div className="flex flex-wrap justify-end gap-1.5">
                         <button
                           type="button"
-                          disabled={checkNow.isPending}
+                          disabled={checkNow.isPending && checkNow.variables === monitor.id}
                           onClick={() =>
                             checkNow.mutate(monitor.id, {
                               onError: (error) => setActionError(error.message),
@@ -202,7 +202,7 @@ export function MonitorsPage() {
         </div>
       )}
 
-      <div className="flex items-center gap-2 text-[11.5px] text-slate-600">
+      <div className="flex items-center gap-2 text-[11.5px] text-slate-400">
         <CheckIcon size={13} className="text-emerald-500/70" />
         {t("app.updated")}
       </div>

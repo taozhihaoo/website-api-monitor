@@ -76,6 +76,10 @@ export function useChecks(id: number | undefined, hours: number, limit = 100) {
         `/api/monitors/${id}/checks?hours=${hours}&limit=${limit}&offset=0`,
       ),
     enabled: id !== undefined,
+    // The scheduler produces new checks in the background; without polling the
+    // latency chart / uptime strip stayed a one-time snapshot while the header
+    // claimed the page auto-refreshes.
+    refetchInterval: 30_000,
   });
 }
 
@@ -84,6 +88,7 @@ export function useUptime(id: number | undefined, window: string) {
     queryKey: queryKeys.uptime(id ?? 0, window),
     queryFn: () => api.get<UptimeStats>(`/api/monitors/${id}/uptime?window=${window}`),
     enabled: id !== undefined,
+    refetchInterval: 30_000,
   });
 }
 
@@ -92,6 +97,7 @@ export function useMonitorIncidents(id: number | undefined) {
     queryKey: queryKeys.monitorIncidents(id ?? 0),
     queryFn: () => api.get<IncidentList>(`/api/monitors/${id}/incidents?limit=20`),
     enabled: id !== undefined,
+    refetchInterval: 30_000,
   });
 }
 
@@ -109,6 +115,7 @@ export function useSslInfo(id: number | undefined) {
     queryKey: queryKeys.ssl(id ?? 0),
     queryFn: () => api.get<SslInfo>(`/api/ssl/${id}`),
     enabled: id !== undefined,
+    refetchInterval: 60_000,
   });
 }
 
@@ -146,6 +153,7 @@ export function useDeleteMonitor() {
     onSuccess: (_data, id) => {
       invalidateAll(qc);
       qc.invalidateQueries({ queryKey: queryKeys.monitorData(id) });
+      qc.invalidateQueries({ queryKey: queryKeys.ssl(id) });
     },
   });
 }
@@ -177,13 +185,12 @@ export function useCheckNow() {
 }
 
 export function useUpdateWebhook() {
-  const qc = useQueryClient();
+  // The authoritative profile state lives in AuthContext; SettingsPage calls
+  // refreshUser() on success. A setQueryData(["me"]) here was a dead write to
+  // a cache key no component ever reads.
   return useMutation({
     mutationFn: (webhook_url: string | null) =>
       api.put<User>("/api/me/notifications", { webhook_url }),
-    onSuccess: (user) => {
-      qc.setQueryData(["me"], user);
-    },
   });
 }
 

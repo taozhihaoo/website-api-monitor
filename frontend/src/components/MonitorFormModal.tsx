@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 import type { Monitor, MonitorInput, MonitorType } from "../api/types";
@@ -24,7 +24,7 @@ const INTERVAL_OPTIONS: { value: number; labelKey: IntervalKey }[] = [
   { value: 3600, labelKey: "form.interval1h" },
 ];
 
-interface FormState {
+export interface FormState {
   name: string;
   type: MonitorType;
   target_url: string;
@@ -65,6 +65,53 @@ function toFormState(monitor?: Monitor | null): FormState {
   };
 }
 
+/**
+ * Client-side counterpart of the backend SSRF guard. Parses the hostname
+ * instead of prefix-matching the raw URL: `10.example.com` is a public domain
+ * (must be allowed) while `172.20.1.1` is RFC1918 (must be rejected).
+ * The backend still performs the authoritative check on every request.
+ */
+export function isPrivateTarget(rawUrl: string): boolean {
+  try {
+    const hostname = new URL(rawUrl.trim()).hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (hostname === "localhost" || hostname.endsWith(".localhost")) return true;
+    if (hostname === "::1" || hostname === "0:0:0:0:0:0:0:1") return true;
+    let candidate = hostname;
+    const mapped = hostname.match(/^::ffff:(.+)$/i);
+    if (mapped) {
+      const tail = mapped[1];
+      if (tail.includes(".")) {
+        candidate = tail;
+      } else {
+        // WHATWG URLs normalise IPv4-mapped IPv6 to hex groups, e.g.
+        // [::ffff:10.0.0.1] -> "::ffff:a00:1".
+        const groups = tail.split(":").map((group) => parseInt(group, 16));
+        const [high, low] = groups.slice(-2);
+        candidate = `${(high >> 8) & 255}.${high & 255}.${(low >> 8) & 255}.${low & 255}`;
+      }
+    }
+    const parts = candidate.split(".");
+    if (parts.length === 4 && parts.every((p) => /^\d{1,3}$/.test(p) && Number(p) <= 255)) {
+      const [a, b] = parts.map(Number);
+      if (
+        a === 0 ||
+        a === 10 ||
+        a === 127 ||
+        (a === 100 && b >= 64 && b <= 127) || // CGNAT
+        (a === 169 && b === 254) || // link-local / cloud metadata
+        (a === 172 && b >= 16 && b <= 31) ||
+        (a === 192 && b === 168) ||
+        a >= 224
+      ) {
+        return true;
+      }
+    }
+    return /^f[cd][0-9a-f]{2}:/i.test(hostname) || /^fe[89ab][0-9a-f]:/i.test(hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function validateMonitorForm(
   state: FormState,
   t: TFunction = englishT,
@@ -78,19 +125,19 @@ export function validateMonitorForm(
     errors.target_url = t("form.errorUrlScheme");
   } else if (state.type === "ssl" && !/^https:\/\//i.test(url)) {
     errors.target_url = t("form.errorUrlSsl");
-  } else if (/^https?:\/\/(localhost|127\.|0\.0\.0\.0|\[::1\]|10\.|192\.168\.|169\.254\.)/i.test(url)) {
+  } else if (isPrivateTarget(url)) {
     errors.target_url = t("form.errorUrlPrivate");
   }
   const interval = state.customMode
     ? Number(state.custom_interval)
     : state.interval_seconds;
-  if (!Number.isFinite(interval) || interval < 60 || interval > 86400) {
+  if (!Number.isInteger(interval) || interval < 60 || interval > 86400) {
     errors.interval_seconds = t("form.errorInterval");
   }
-  if (state.timeout_seconds < 1 || state.timeout_seconds > 30) {
+  if (!Number.isInteger(state.timeout_seconds) || state.timeout_seconds < 1 || state.timeout_seconds > 30) {
     errors.timeout_seconds = t("form.errorTimeout");
   }
-  if (state.expected_status < 100 || state.expected_status > 599) {
+  if (!Number.isInteger(state.expected_status) || state.expected_status < 100 || state.expected_status > 599) {
     errors.expected_status = t("form.errorExpectedStatus");
   }
   if (state.type === "keyword" && !state.keyword.trim()) {
@@ -99,7 +146,10 @@ export function validateMonitorForm(
   if (state.type === "api_json" && !state.json_path.trim()) {
     errors.json_path = t("form.errorJsonPath");
   }
-  if (state.ssl_warning_days < 1 || state.ssl_warning_days > 365) {
+  // Only validate the threshold while its input is actually visible. An
+  // invisible error used to block submission with no way to see or fix it.
+  const sslVisible = state.type !== "ssl" && /^https:\/\//i.test(url) && state.ssl_check_enabled;
+  if (sslVisible && (!Number.isInteger(state.ssl_warning_days) || state.ssl_warning_days < 1 || state.ssl_warning_days > 365)) {
     errors.ssl_warning_days = t("form.errorSslWarning");
   }
   return errors;
@@ -122,9 +172,69 @@ export function MonitorFormModal({
   const [state, setState] = useState<FormState>(() => toFormState(monitor));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const isHttps = /^https:\/\//i.test(state.target_url.trim());
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // aria-modal="true" promises assistive tech that focus stays inside the
+  // dialog. Deliver on that: initial focus, Tab cycling, Escape and scroll
+  // lock, plus focus restoration on close. The effect runs once (a ref keeps
+  // the latest onClose) so typing does not re-focus the first field.
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialogRef.current?.querySelector<HTMLElement>("#monitor-name")?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusables = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.getClientRects().length > 0);
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocused?.focus?.();
+    };
+  }, []);
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setState((prev) => ({ ...prev, [key]: value }));
+    setState((prev) => {
+      const next: FormState = { ...prev, [key]: value };
+      // Switching type or scheme used to leave hidden field values in state,
+      // which were then submitted (e.g. an SSL sidecar on an http:// target).
+      if (key === "type") {
+        const type = value as MonitorType;
+        if (type !== "keyword") next.keyword = "";
+        if (type !== "api_json") {
+          next.json_path = "";
+          next.json_expected_value = "";
+        }
+      }
+      if (key === "target_url" && !/^https:\/\//i.test((value as string).trim())) {
+        next.ssl_check_enabled = false;
+      }
+      return next;
+    });
   };
 
   const handleSubmit = (event: FormEvent) => {
@@ -151,7 +261,7 @@ export function MonitorFormModal({
         state.type === "api_json" && state.json_expected_value.trim()
           ? state.json_expected_value.trim()
           : null,
-      ssl_check_enabled: state.ssl_check_enabled,
+      ssl_check_enabled: isHttps ? state.ssl_check_enabled : false,
       ssl_warning_days: state.ssl_warning_days,
     };
     onSubmit(input);
@@ -160,11 +270,25 @@ export function MonitorFormModal({
   const field = "sw-input";
   const label = "sw-label";
   const errorText = "sw-field-error";
+  const describedBy = (name: string) => (errors[name] ? `err-${name}` : undefined);
+  const invalid = (name: string) => (errors[name] ? true : undefined);
+  const errorFor = (name: string) =>
+    errors[name] ? (
+      <p id={`err-${name}`} className={errorText}>
+        {errors[name]}
+      </p>
+    ) : null;
 
   return (
-    <div className="sw-modal-backdrop sm:items-center" role="dialog" aria-modal="true" aria-label={monitor ? t("form.editTitle", { name: monitor.name }) : t("form.newTitle")}>
+    <div
+      ref={dialogRef}
+      className="sw-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label={monitor ? t("form.editTitle", { name: monitor.name }) : t("form.newTitle")}
+    >
       <form onSubmit={handleSubmit} noValidate className="sw-modal">
-        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-5">
+        <div className="sw-modal-head">
           <div className="flex items-start gap-3.5">
             <div className="sw-brand-mark !h-10 !w-10 shrink-0">
               <RadarIcon size={19} />
@@ -173,20 +297,25 @@ export function MonitorFormModal({
               <h2 className="text-[17px] font-bold tracking-tight text-slate-50">
                 {monitor ? t("form.editTitle", { name: monitor.name }) : t("form.newTitle")}
               </h2>
-              <p className="mt-1 text-[12px] text-slate-500">{t("form.subtitle")}</p>
+              <p className="mt-1 text-[12px] text-slate-400">{t("form.subtitle")}</p>
             </div>
           </div>
-          <button type="button" onClick={onClose} className="sw-btn sw-btn-ghost sw-btn-icon !text-slate-400" aria-label={t("action.close")}>
+          <button
+            type="button"
+            onClick={onClose}
+            className="sw-btn sw-btn-ghost sw-btn-icon !text-slate-300"
+            aria-label={t("action.close")}
+          >
             ✕
           </button>
         </div>
 
-        <div className="max-h-[min(68vh,640px)] overflow-y-auto px-6 py-6">
+        <div className="sw-modal-body">
           {serverError && <div role="alert" className="sw-alert !my-0 mb-5 text-[12.5px]">{serverError}</div>}
 
-          <div className="mb-5 flex items-center gap-3">
+          <div className="sw-form-section">
             <span className="sw-chip !text-indigo-300">01</span>
-            <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{t("form.basicSection")}</span>
+            <span className="sw-form-section-label">{t("form.basicSection")}</span>
             <span className="h-px flex-1 bg-white/10" />
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -198,8 +327,10 @@ export function MonitorFormModal({
                 value={state.name}
                 onChange={(e) => update("name", e.target.value)}
                 placeholder={t("form.namePlaceholder")}
+                aria-invalid={invalid("name")}
+                aria-describedby={describedBy("name")}
               />
-              {errors.name && <p className={errorText}>{errors.name}</p>}
+              {errorFor("name")}
             </div>
             <div>
               <label className={label} htmlFor="monitor-type">{t("form.type")}</label>
@@ -223,14 +354,16 @@ export function MonitorFormModal({
                 value={state.target_url}
                 onChange={(e) => update("target_url", e.target.value)}
                 placeholder={t("form.urlPlaceholder")}
+                aria-invalid={invalid("target_url")}
+                aria-describedby={describedBy("target_url")}
               />
-              {errors.target_url && <p className={errorText}>{errors.target_url}</p>}
+              {errorFor("target_url")}
             </div>
           </div>
 
-          <div className="mb-5 mt-8 flex items-center gap-3">
+          <div className="sw-form-section">
             <span className="sw-chip !text-indigo-300">02</span>
-            <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{t("form.scheduleSection")}</span>
+            <span className="sw-form-section-label">{t("form.scheduleSection")}</span>
             <span className="h-px flex-1 bg-white/10" />
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -271,12 +404,13 @@ export function MonitorFormModal({
                   type="number"
                   min={60}
                   max={86400}
+                  step={1}
                   value={state.custom_interval}
                   onChange={(e) => update("custom_interval", e.target.value)}
                   placeholder={t("form.customPlaceholder")}
                 />
               )}
-              {errors.interval_seconds && <p className={errorText}>{errors.interval_seconds}</p>}
+              {errorFor("interval_seconds")}
             </div>
             <div>
               <label className={label} htmlFor="monitor-timeout">{t("form.timeout")}</label>
@@ -286,10 +420,13 @@ export function MonitorFormModal({
                 type="number"
                 min={1}
                 max={30}
+                step={1}
                 value={state.timeout_seconds}
                 onChange={(e) => update("timeout_seconds", Number(e.target.value))}
+                aria-invalid={invalid("timeout_seconds")}
+                aria-describedby={describedBy("timeout_seconds")}
               />
-              {errors.timeout_seconds && <p className={errorText}>{errors.timeout_seconds}</p>}
+              {errorFor("timeout_seconds")}
             </div>
             <div>
               <label className={label} htmlFor="monitor-status">{t("form.expectedStatus")}</label>
@@ -299,10 +436,13 @@ export function MonitorFormModal({
                 type="number"
                 min={100}
                 max={599}
+                step={1}
                 value={state.expected_status}
                 onChange={(e) => update("expected_status", Number(e.target.value))}
+                aria-invalid={invalid("expected_status")}
+                aria-describedby={describedBy("expected_status")}
               />
-              {errors.expected_status && <p className={errorText}>{errors.expected_status}</p>}
+              {errorFor("expected_status")}
             </div>
 
             {state.type === "keyword" && (
@@ -315,8 +455,10 @@ export function MonitorFormModal({
                     value={state.keyword}
                     onChange={(e) => update("keyword", e.target.value)}
                     placeholder={t("form.keywordPlaceholder")}
+                    aria-invalid={invalid("keyword")}
+                    aria-describedby={describedBy("keyword")}
                   />
-                  {errors.keyword && <p className={errorText}>{errors.keyword}</p>}
+                  {errorFor("keyword")}
                 </div>
                 <div>
                   <label className={label} htmlFor="monitor-keyword-mode">{t("form.rule")}</label>
@@ -345,8 +487,10 @@ export function MonitorFormModal({
                     value={state.json_path}
                     onChange={(e) => update("json_path", e.target.value)}
                     placeholder={t("form.jsonPathPlaceholder")}
+                    aria-invalid={invalid("json_path")}
+                    aria-describedby={describedBy("json_path")}
                   />
-                  {errors.json_path && <p className={errorText}>{errors.json_path}</p>}
+                  {errorFor("json_path")}
                 </div>
                 <div>
                   <label className={label} htmlFor="monitor-json-expected">{t("form.jsonExpected")}</label>
@@ -363,7 +507,7 @@ export function MonitorFormModal({
 
             {state.type !== "ssl" && isHttps && (
               <div className="sm:col-span-2">
-                <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-white/10 bg-white/[0.025] px-4 py-3 text-[13px] text-slate-300 transition hover:border-indigo-400/30">
+                <label className="sw-toggle-row">
                   <ShieldIcon size={17} className="shrink-0 text-emerald-400" />
                   <span className="flex-1">{t("form.sslSidecar")}</span>
                   <input
@@ -382,10 +526,13 @@ export function MonitorFormModal({
                       type="number"
                       min={1}
                       max={365}
+                      step={1}
                       value={state.ssl_warning_days}
                       onChange={(e) => update("ssl_warning_days", Number(e.target.value))}
+                      aria-invalid={invalid("ssl_warning_days")}
+                      aria-describedby={describedBy("ssl_warning_days")}
                     />
-                    {errors.ssl_warning_days && <p className={errorText}>{errors.ssl_warning_days}</p>}
+                    {errorFor("ssl_warning_days")}
                   </div>
                 )}
               </div>
@@ -393,7 +540,7 @@ export function MonitorFormModal({
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 border-t border-white/10 px-6 py-4">
+        <div className="sw-modal-foot">
           <button type="button" onClick={onClose} className="sw-btn sw-btn-ghost">
             {t("action.cancel")}
           </button>

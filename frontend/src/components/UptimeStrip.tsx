@@ -8,7 +8,7 @@ import { formatDateTime } from "../utils/format";
  */
 export function UptimeStrip({
   checks,
-  max = 30,
+  max = 20,
 }: {
   checks: Check[] | undefined;
   max?: number;
@@ -16,24 +16,22 @@ export function UptimeStrip({
   const { locale, t } = useI18n();
   const recent = (checks || []).slice(0, max).reverse();
   const bars: Check[] = [...recent];
-  while (bars.length < Math.min(max, 20)) {
+  // `max` now means exactly what it says: the strip always renders max bars.
+  while (bars.length < max) {
     bars.unshift({} as Check);
   }
+  const up = recent.filter((c) => c.status === "up").length;
+  const down = recent.filter((c) => c.status === "down").length;
+  const description = recent.length
+    ? t("format.lastChecksDetail", { total: recent.length, up, down })
+    : t("format.noChecksYet");
 
   return (
     <div
       className="flex h-9 items-stretch gap-[3px]"
       role="img"
-      aria-label={
-        recent.length
-          ? t("format.lastChecks", { count: recent.length })
-          : t("format.noChecksYet")
-      }
-      title={
-        recent.length
-          ? t("format.lastChecks", { count: recent.length })
-          : t("format.noChecksYet")
-      }
+      aria-label={description}
+      title={description}
     >
       {bars.map((check, index) => {
         const status = check.status;

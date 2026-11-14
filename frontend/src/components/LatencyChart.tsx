@@ -13,21 +13,31 @@ import { useI18n } from "../i18n/I18nContext";
 
 export function LatencyChart({ checks }: { checks: Check[] | undefined }) {
   const { t, locale } = useI18n();
+  const timeFormat = (value: string) =>
+    new Date(value).toLocaleTimeString(locale === "zh" ? "zh-CN" : "en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  // Use the full timestamp as the category key: formatting to HH:mm made two
+  // checks in the same minute collapse onto one x-axis tick. Also skip missing
+  // latency values (undefined previously became an invalid data point).
   const data = (checks || [])
-    .filter((c) => c.latency_ms !== null)
+    .filter(
+      (c) =>
+        typeof c.latency_ms === "number" &&
+        Number.isFinite(c.latency_ms) &&
+        !Number.isNaN(new Date(c.checked_at).getTime()),
+    )
     .slice(0, 100)
     .reverse()
     .map((c) => ({
-      time: new Date(c.checked_at).toLocaleTimeString(locale === "zh" ? "zh-CN" : "en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
+      stamp: c.checked_at,
       ms: c.latency_ms as number,
     }));
 
   if (data.length === 0) {
     return (
-      <div className="flex h-52 items-center justify-center text-[13px] text-slate-500">
+      <div className="flex h-52 items-center justify-center text-[13px] text-slate-400">
         {t("feedback.noLatency")}
       </div>
     );
@@ -45,14 +55,15 @@ export function LatencyChart({ checks }: { checks: Check[] | undefined }) {
           </defs>
           <CartesianGrid stroke="rgba(148,163,184,0.1)" strokeDasharray="3 5" vertical={false} />
           <XAxis
-            dataKey="time"
-            tick={{ fill: "#64748b", fontSize: 11 }}
+            dataKey="stamp"
+            tickFormatter={timeFormat}
+            tick={{ fill: "#8494ad", fontSize: 11 }}
             tickLine={false}
             axisLine={{ stroke: "rgba(148,163,184,0.15)" }}
             minTickGap={28}
           />
           <YAxis
-            tick={{ fill: "#64748b", fontSize: 11 }}
+            tick={{ fill: "#8494ad", fontSize: 11 }}
             tickLine={false}
             axisLine={false}
             width={52}
@@ -68,7 +79,8 @@ export function LatencyChart({ checks }: { checks: Check[] | undefined }) {
               boxShadow: "0 16px 40px -20px rgba(0,0,0,0.9)",
               fontSize: 12,
             }}
-            formatter={(value: number | string) => [`${value} ms`, t("format.latency")]}
+            labelFormatter={(value) => timeFormat(String(value))}
+            formatter={(chartValue: number | string) => [`${chartValue} ms`, t("format.latency")]}
           />
           <Area
             type="monotone"

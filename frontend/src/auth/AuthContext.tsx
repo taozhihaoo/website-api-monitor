@@ -38,8 +38,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
     });
     setToken(tokenResponse.access_token);
-    const me = await api.get<User>("/api/auth/me");
-    setUser(me);
+    try {
+      const me = await api.get<User>("/api/auth/me");
+      setUser(me);
+    } catch (error) {
+      // Do not leave a valid token behind after a failed "login": on reload
+      // the user would be signed in despite having just seen an error.
+      clearToken();
+      throw error;
+    }
   };
 
   const register = async (email: string, password: string) => {

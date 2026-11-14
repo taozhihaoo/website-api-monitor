@@ -1,7 +1,19 @@
 // Thin fetch wrapper: auth header, unified error envelope, offline handling.
 // Kept separate from UI so it can be mocked cleanly in tests.
 
+import { translate } from "../i18n/messages";
+import type { Locale } from "../i18n/messages";
+
 const TOKEN_KEY = "sitewatch_token";
+const LOCALE_KEY = "sitewatch_locale";
+
+function uiLocale(): Locale {
+  try {
+    return localStorage.getItem(LOCALE_KEY) === "zh" ? "zh" : "en";
+  } catch {
+    return "en";
+  }
+}
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -41,7 +53,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   try {
     response = await fetch(path, { ...options, headers });
   } catch {
-    throw new ApiError(0, "network_error", "Network error — check your connection and retry.");
+    throw new ApiError(0, "network_error", translate(uiLocale(), "client.networkError"));
   }
 
   if (response.status === 204) {
@@ -57,11 +69,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!response.ok) {
     const envelope = body as { error?: { code?: string; message?: string } } | null;
-    const message = envelope?.error?.message || `Request failed (HTTP ${response.status})`;
+    const message =
+      envelope?.error?.message ||
+      translate(uiLocale(), "client.requestFailed", { status: response.status });
     const code = envelope?.error?.code || "error";
     // Mid-session token expiry: reset and return to login instead of leaving
-    // the user with error banners. Login/register 401s are handled in-page.
-    if (response.status === 401 && !path.startsWith("/api/auth")) {
+    // the user with error banners. Only login/register 401s are handled
+    // in-page; /api/auth/me must NOT be excluded or an expired session keeps
+    // a dead token until some unrelated request happens to fail.
+    const inPageAuth =
+      path === "/api/auth/login" || path === "/api/auth/register";
+    if (response.status === 401 && !inPageAuth) {
       clearToken();
       if (typeof window !== "undefined" && window.location.pathname !== "/login") {
         window.location.assign("/login");

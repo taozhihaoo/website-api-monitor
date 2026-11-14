@@ -20,9 +20,11 @@ export function Spinner({ label }: { label?: string }) {
 export function ErrorBanner({
   message,
   onRetry,
+  onDismiss,
 }: {
   message: string;
   onRetry?: () => void;
+  onDismiss?: () => void;
 }) {
   const { t } = useI18n();
   return (
@@ -34,12 +36,19 @@ export function ErrorBanner({
           {message}
         </span>
       </span>
-      {onRetry && (
-        <button type="button" onClick={onRetry} className="sw-btn sw-btn-ghost sw-btn-sm shrink-0">
-          <RefreshIcon size={14} />
-          {t("action.retry")}
-        </button>
-      )}
+      <span className="flex shrink-0 items-center gap-2">
+        {onRetry && (
+          <button type="button" onClick={onRetry} className="sw-btn sw-btn-ghost sw-btn-sm">
+            <RefreshIcon size={14} />
+            {t("action.retry")}
+          </button>
+        )}
+        {onDismiss && (
+          <button type="button" onClick={onDismiss} className="sw-btn sw-btn-ghost sw-btn-sm">
+            {t("action.dismiss")}
+          </button>
+        )}
+      </span>
     </div>
   );
 }
@@ -80,12 +89,13 @@ export function StatCard({
 }) {
   return (
     <div className={`sw-stat ${tone}`}>
-      <div className="sw-stat-label">
-        {icon}
-        {label}
+      <div className="sw-stat-top">
+        <div className="sw-stat-label">{label}</div>
+        {icon && <div className="sw-stat-icon">{icon}</div>}
       </div>
       <div className="sw-stat-value">{value}</div>
       {sub && <div className="sw-stat-sub">{sub}</div>}
+      <div className="sw-stat-track" aria-hidden="true"><span /></div>
     </div>
   );
 }

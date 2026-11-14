@@ -61,8 +61,10 @@ function AuthForm({
           onChange={(e) => setEmail(e.target.value)}
           placeholder={t("auth.emailPlaceholder")}
           autoComplete="email"
+          aria-invalid={errors.email ? true : undefined}
+          aria-describedby={errors.email ? "err-email" : undefined}
         />
-        {errors.email && <p className="sw-field-error">{errors.email}</p>}
+        {errors.email && <p id="err-email" className="sw-field-error">{errors.email}</p>}
       </div>
       <div>
         <label htmlFor="password" className="sw-label">
@@ -76,8 +78,10 @@ function AuthForm({
           onChange={(e) => setPassword(e.target.value)}
           placeholder={t("auth.passwordPlaceholder")}
           autoComplete={mode === "login" ? "current-password" : "new-password"}
+          aria-invalid={errors.password ? true : undefined}
+          aria-describedby={errors.password ? "err-password" : undefined}
         />
-        {errors.password && <p className="sw-field-error">{errors.password}</p>}
+        {errors.password && <p id="err-password" className="sw-field-error">{errors.password}</p>}
       </div>
       <button
         type="submit"
@@ -114,7 +118,7 @@ function AuthShell({ children }: { children: ReactNode }) {
             </div>
             <div>
               <div className="text-lg font-bold tracking-tight text-slate-50">{t("app.name")}</div>
-              <div className="text-[11px] text-slate-500">{t("app.tagline")}</div>
+              <div className="text-[11px] text-slate-400">{t("app.tagline")}</div>
             </div>
           </div>
 
@@ -141,12 +145,26 @@ function AuthShell({ children }: { children: ReactNode }) {
             ))}
           </div>
 
-          <div className="relative mt-12 hidden h-[180px] items-center justify-center xl:flex">
-            <div className="sw-radar !h-[330px] !w-[330px] scale-75">
+          <div className="relative mt-10 hidden h-[320px] items-center justify-center xl:flex">
+            <div className="sw-radar !h-[320px] !w-[320px]">
               <div className="sw-radar-sweep" />
               <div className="sw-radar-ping !left-[26%] !top-[34%]" />
               <div className="sw-radar-ping !left-[68%] !top-[62%] !bg-rose-400" />
               <div className="sw-radar-ping !left-[58%] !top-[22%] !bg-cyan-300" />
+            </div>
+            <div className="sw-auth-stat absolute right-0 top-2 min-w-[150px]">
+              <span className="sw-dot-live" />
+              <div>
+                <div className="sw-auth-stat-value">99.98%</div>
+                <div className="sw-auth-stat-label">{t("auth.heroStatUptime")}</div>
+              </div>
+            </div>
+            <div className="sw-auth-stat absolute bottom-2 left-0 min-w-[150px]">
+              <ActivityIcon size={17} className="text-cyan-300" />
+              <div>
+                <div className="sw-auth-stat-value">142 ms</div>
+                <div className="sw-auth-stat-label">{t("auth.heroStatLatency")}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -195,7 +213,7 @@ export function LoginPage() {
           {t("auth.loginTitle")}
         </h1>
         <p className="mt-1.5 text-[13px] text-slate-400">{t("app.tagline")}</p>
-        <div className="my-7 h-px bg-white/10" />
+        <div className="my-7 h-px bg-gradient-to-r from-indigo-400/40 via-white/10 to-transparent" />
         <AuthForm
           mode="login"
           onSubmit={handleSubmit}
@@ -246,7 +264,7 @@ export function RegisterPage() {
           {t("auth.registerTitle")}
         </h1>
         <p className="mt-1.5 text-[13px] text-slate-400">{t("app.tagline")}</p>
-        <div className="my-7 h-px bg-white/10" />
+        <div className="my-7 h-px bg-gradient-to-r from-indigo-400/40 via-white/10 to-transparent" />
         <AuthForm
           mode="register"
           onSubmit={handleSubmit}

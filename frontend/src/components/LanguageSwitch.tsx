@@ -3,7 +3,7 @@ import { useI18n } from "../i18n/I18nContext";
 export function LanguageSwitch() {
   const { locale, setLocale, t } = useI18n();
   return (
-    <div className="sw-lang" aria-label={t("lang.label")}>
+    <div className="sw-lang" role="group" aria-label={t("lang.label")}>
       <button
         type="button"
         aria-label="English"

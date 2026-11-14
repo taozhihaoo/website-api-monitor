@@ -77,13 +77,28 @@ export function DashboardPage() {
         />
       </div>
 
-      <div className="flex items-center gap-2 text-[12px] text-slate-400">
-        <span className={healthy ? "text-emerald-400" : "text-amber-400"}>
-          {healthy ? <CheckIcon size={15} /> : <AlertIcon size={15} />}
-        </span>
-        <span className={healthy ? "text-emerald-300/90" : "text-amber-300/90"}>
-          {healthy ? t("app.systemHealthy") : t("app.systemIssues")}
-        </span>
+      <div className={`sw-hero ${healthy ? "sw-hero-ok" : "sw-hero-warn"}`}>
+        <div className="sw-hero-icon">
+          {healthy ? <CheckIcon size={22} /> : <AlertIcon size={22} />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="sw-hero-title">
+            {t(healthy ? "app.systemHealthy" : "app.systemIssues")}
+          </div>
+          <div className="sw-hero-sub">
+            {healthy
+              ? t("dashboard.heroHealthyDesc")
+              : t("dashboard.heroIssuesDesc", {
+                  count: Math.max(stats?.down ?? 0, stats?.active_incidents ?? 0),
+                })}
+          </div>
+        </div>
+        <div className="sw-hero-metric">
+          <span className="sw-hero-metric-value">
+            {stats?.up ?? 0}<span className="text-[15px] text-slate-400"> / {stats?.total_monitors ?? 0}</span>
+          </span>
+          <span className="sw-hero-metric-label">{t("dashboard.heroMetricLabel")}</span>
+        </div>
       </div>
 
       <section className="sw-card overflow-hidden">
@@ -153,8 +168,10 @@ export function DashboardPage() {
               onRetry={() => recentIncidents.refetch()}
             />
           </div>
+        ) : recentIncidents.isLoading ? (
+          <p className="px-5 py-8 text-[13px] text-slate-400">{t("feedback.loadingIncidents")}</p>
         ) : !recentIncidents.data || recentIncidents.data.items.length === 0 ? (
-          <p className="px-5 py-8 text-[13px] text-slate-500">{t("feedback.noIncidentsRecorded")}</p>
+          <p className="px-5 py-8 text-[13px] text-slate-400">{t("feedback.noIncidentsRecorded")}</p>
         ) : (
           <ul className="divide-y divide-white/5">
             {recentIncidents.data.items.slice(0, 5).map((incident) => (
@@ -164,10 +181,10 @@ export function DashboardPage() {
                   to={`/monitors/${incident.monitor_id}`}
                   className="font-medium text-slate-100 hover:text-indigo-300"
                 >
-                  {incident.monitor_name || `Monitor #${incident.monitor_id}`}
+                  {incident.monitor_name || t("common.monitorFallback", { id: incident.monitor_id })}
                 </Link>
-                <span className="truncate text-slate-500">{incident.cause || t("feedback.unknownCause")}</span>
-                <span className="ml-auto text-[11.5px] text-slate-500">
+                <span className="truncate text-slate-400">{incident.cause || t("feedback.unknownCause")}</span>
+                <span className="ml-auto text-[11.5px] text-slate-400">
                   {formatRelative(incident.started_at, locale)}
                 </span>
               </li>
@@ -188,11 +205,11 @@ function MonitorRow({ monitor }: { monitor: Monitor }) {
       <td className="max-w-[260px]">
         <Link
           to={`/monitors/${monitor.id}`}
-          className="font-semibold text-slate-100 transition hover:text-indigo-300"
+          className="block truncate font-semibold text-slate-100 transition hover:text-indigo-300"
         >
           {monitor.name}
         </Link>
-        <div className="mt-0.5 truncate text-[11.5px] text-slate-500">{monitor.target_url}</div>
+        <div className="mt-0.5 truncate text-[11.5px] text-slate-400">{monitor.target_url}</div>
       </td>
       <td>
         <StatusBadge status={status} />
@@ -202,7 +219,7 @@ function MonitorRow({ monitor }: { monitor: Monitor }) {
       <td className="hidden w-56 md:table-cell">
         <UptimeStrip checks={checks.data?.items} />
       </td>
-      <td className="text-[11.5px] text-slate-500">{formatRelative(monitor.last_checked_at, locale)}</td>
+      <td className="text-[11.5px] text-slate-400">{formatRelative(monitor.last_checked_at, locale)}</td>
     </tr>
   );
 }

@@ -53,33 +53,52 @@ export function formatRelative(
   if (Number.isNaN(then)) {
     return translate(locale, "format.never");
   }
-  const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+  const deltaSeconds = (Date.now() - then) / 1000;
+  // Future timestamps are real data (e.g. `next_check_at`). Clamping to 0 used
+  // to render "0s ago" for a check due in five minutes.
+  if (deltaSeconds < 0) {
+    const seconds = Math.max(1, Math.ceil(-deltaSeconds));
+    if (seconds < 60) {
+      return translate(locale, "format.inSeconds", { count: seconds });
+    }
+    const minutes = Math.ceil(seconds / 60);
+    if (minutes < 60) {
+      return translate(locale, "format.inMinutes", { count: minutes });
+    }
+    const hours = Math.ceil(minutes / 60);
+    if (hours < 48) {
+      return translate(locale, "format.inHours", { count: hours });
+    }
+    return translate(locale, "format.inDays", { count: Math.ceil(hours / 24) });
+  }
+  const seconds = Math.floor(deltaSeconds);
   if (seconds < 60) {
     return translate(locale, "format.secondsAgo", { count: seconds });
   }
-  const minutes = Math.round(seconds / 60);
+  const minutes = Math.floor(seconds / 60);
   if (minutes < 60) {
     return translate(locale, "format.minutesAgo", { count: minutes });
   }
-  const hours = Math.round(minutes / 60);
+  const hours = Math.floor(minutes / 60);
   if (hours < 48) {
     return translate(locale, "format.hoursAgo", { count: hours });
   }
-  return translate(locale, "format.daysAgo", { count: Math.round(hours / 24) });
+  return translate(locale, "format.daysAgo", { count: Math.floor(hours / 24) });
 }
 
 export function formatDuration(
   seconds: number | null | undefined,
   locale: Locale = "en",
 ): string {
-  if (seconds === null || seconds === undefined) {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) {
     return "—";
   }
-  if (seconds < 60) {
-    return translate(locale, "format.seconds", { count: seconds });
+  const whole = Math.max(0, Math.floor(seconds));
+  if (whole < 60) {
+    return translate(locale, "format.seconds", { count: whole });
   }
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
+  const minutes = Math.floor(whole / 60);
+  const rest = whole % 60;
   if (minutes < 60) {
     return rest
       ? translate(locale, "format.minutesSeconds", { minutes, seconds: rest })
@@ -93,6 +112,9 @@ export function formatDuration(
 }
 
 export function formatInterval(seconds: number, locale: Locale = "en"): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return "—";
+  }
   if (seconds % 3600 === 0) {
     return translate(locale, "format.hourShort", { count: seconds / 3600 });
   }

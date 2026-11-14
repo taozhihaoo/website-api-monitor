@@ -46,7 +46,6 @@ const DATA = {
       "JSON value at 'completed' does not match expected value",
       "Connection refused",
     ],
-    statusText: "UP",
   },
   zh: {
     dir: "zh",
@@ -60,14 +59,16 @@ const DATA = {
       "关键字匹配失败演示",
       "JSON 断言失败演示",
     ],
+    // Server-side `cause` strings are produced by the checkers and are NOT
+    // translated by the UI. Keep them identical to the English dataset so the
+    // Chinese screenshots show the real product, not an invented translation.
     causes: [
-      "期望 HTTP 200，实际返回 503",
-      "请求在 10 秒后超时",
-      "响应体中未找到关键字“Example Domain”",
-      "JSON 路径 completed 的值与期望值不符",
-      "连接被拒绝",
+      "Expected HTTP 200, got 503",
+      "Request timed out after 10s",
+      "Keyword 'Example Domain' not found in response body",
+      "JSON value at 'completed' does not match expected value",
+      "Connection refused",
     ],
-    statusText: "正常",
   },
 };
 
@@ -220,7 +221,17 @@ async function installMocks(context, routes) {
     const key = Object.keys(routes)
       .sort((a, b) => b.length - a.length)
       .find((prefix) => url.pathname.startsWith(prefix));
-    const body = key ? routes[key] : { items: [], total: 0, limit: 100, offset: 0 };
+    let body = key ? routes[key] : { items: [], total: 0, limit: 100, offset: 0 };
+    // Honour the same query params the real API uses, so a future screenshot
+    // of a filtered incidents page or a different uptime window is accurate.
+    if (url.pathname === "/api/incidents" && url.searchParams.has("active")) {
+      const wantActive = url.searchParams.get("active") === "true";
+      const items = body.items.filter((i) => i.is_resolved === !wantActive);
+      body = { ...body, items, total: items.length };
+    }
+    if (url.pathname.endsWith("/uptime") && url.searchParams.has("window")) {
+      body = { ...body, window: url.searchParams.get("window") };
+    }
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -262,11 +273,17 @@ async function captureLocale(browser, locale) {
     { value: locale },
   );
   await installMocks(context, routes);
+  // A UI exception must never produce a screenshot that looks healthy: collect
+  // everything and fail the whole run at the end instead.
+  const pageErrors = [];
+  const watch = (target) => {
+    target.on("pageerror", (error) => pageErrors.push(`[pageerror] ${error.message}`));
+    target.on("console", (message) => {
+      if (message.type() === "error") pageErrors.push(`[console] ${message.text()}`);
+    });
+  };
   const page = await context.newPage();
-  page.on("pageerror", (error) => console.error(`  [pageerror] ${error.message}`));
-  page.on("console", (message) => {
-    if (message.type() === "error") console.error(`  [console] ${message.text()}`);
-  });
+  watch(page);
 
   await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
   await shoot(page, d.dir, "dashboard", "h1");
@@ -301,9 +318,14 @@ async function captureLocale(browser, locale) {
   );
   await installMocks(authContext, routes);
   const loginPage = await authContext.newPage();
+  watch(loginPage);
   await loginPage.goto(`${BASE}/login`, { waitUntil: "networkidle" });
   await shoot(loginPage, d.dir, "login", "h1");
   await authContext.close();
+
+  if (pageErrors.length) {
+    throw new Error(`UI errors while capturing ${locale}:\n${pageErrors.join("\n")}`);
+  }
 }
 
 async function main() {

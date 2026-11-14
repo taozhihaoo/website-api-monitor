@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
+import { useDashboard } from "../api/hooks";
 import { useAuth } from "../auth/AuthContext";
 import { useI18n } from "../i18n/I18nContext";
 import type { MessageKey } from "../i18n/messages";
@@ -24,6 +25,12 @@ export function Layout() {
   const { user, logout } = useAuth();
   const { t } = useI18n();
   const navigate = useNavigate();
+  const summary = useDashboard();
+  // The sidebar used to hard-code "All systems operational" even on a screen
+  // full of DOWN monitors. Derive it from the same summary the dashboard uses.
+  const healthy =
+    !summary.data ||
+    ((summary.data.down ?? 0) === 0 && (summary.data.active_incidents ?? 0) === 0);
 
   const handleLogout = () => {
     logout();
@@ -42,7 +49,7 @@ export function Layout() {
               <div className="text-[15px] font-bold tracking-tight text-slate-50">
                 {t("app.name")}
               </div>
-              <div className="truncate text-[10.5px] text-slate-500">{t("app.tagline")}</div>
+              <div className="truncate text-[10.5px] text-slate-400">{t("app.tagline")}</div>
             </div>
             <span className="ml-auto hidden whitespace-nowrap rounded-md border border-indigo-400/25 bg-indigo-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-indigo-300 2xl:inline">
               {t("app.badge")}
@@ -74,17 +81,22 @@ export function Layout() {
           </nav>
 
           <div className="mt-auto hidden px-4 pb-5 lg:block">
-            <div className="sw-card sw-card-hover p-4">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                <ActivityIcon size={15} className="text-emerald-400" />
-                {t("app.systemHealthy")}
+            <div className="sw-card sw-card-hover sw-status-card p-4">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-300">
+                <ActivityIcon
+                  size={15}
+                  className={healthy ? "text-emerald-400" : "text-amber-400"}
+                />
+                {summary.data
+                  ? t(healthy ? "app.systemHealthy" : "app.systemIssues")
+                  : t("app.live")}
               </div>
-              <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
-                <span className="sw-dot-live" />
+              <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-400">
+                <span className={`sw-dot-live ${healthy ? "" : "sw-dot-warn"}`} />
                 {t("app.updated")}
               </div>
             </div>
-            <p className="mt-4 px-1 text-[10.5px] leading-relaxed text-slate-600">
+            <p className="mt-4 px-1 text-[10.5px] leading-relaxed text-slate-400">
               {t("app.footer")}
             </p>
           </div>
@@ -92,11 +104,11 @@ export function Layout() {
 
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="sw-topbar flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-7">
-            <div className="flex items-center gap-2 text-[12px] font-medium text-slate-400">
+            <div className="sw-live-pill">
               <span className="sw-dot-live" />
               <span className="font-semibold text-emerald-300/90">{t("app.live")}</span>
-              <span className="hidden text-slate-600 sm:inline">·</span>
-              <span className="hidden text-slate-500 sm:inline">{t("app.updated")}</span>
+              <span className="hidden text-slate-400 sm:inline">·</span>
+              <span className="hidden text-slate-300 sm:inline">{t("app.updated")}</span>
             </div>
             <div className="flex items-center gap-2.5 sm:gap-3">
               <LanguageSwitch />
@@ -105,7 +117,7 @@ export function Layout() {
                   {(user?.email || "?").charAt(0).toUpperCase()}
                 </div>
                 <div className="hidden text-right xl:block">
-                  <div className="text-[10px] uppercase tracking-wider text-slate-600">
+                  <div className="text-[10px] uppercase tracking-wider text-slate-400">
                     {t("nav.signedInAs")}
                   </div>
                   <div className="max-w-[180px] truncate text-[11.5px] text-slate-300">
@@ -116,6 +128,7 @@ export function Layout() {
               <button
                 type="button"
                 onClick={handleLogout}
+                aria-label={t("nav.signOut")}
                 className="sw-btn sw-btn-ghost sw-btn-sm"
               >
                 <LogoutIcon size={14} />
@@ -128,7 +141,7 @@ export function Layout() {
             <Outlet />
           </main>
 
-          <footer className="border-t border-white/5 px-5 py-4 text-[10.5px] text-slate-600 lg:hidden">
+          <footer className="border-t border-white/5 px-5 py-4 text-[10.5px] text-slate-400 lg:hidden">
             {t("app.footer")}
           </footer>
         </div>
